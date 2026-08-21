@@ -15,8 +15,6 @@ import {
   deleteCertificateRecord,
 } from "../../lib/certificateStore";
 import { sendIssuanceEmail } from "../../lib/emailService";
-import { jsPDF } from "jspdf";
-import QRCode from "qrcode";
 
 export default function IssuerPortal() {
   const [mounted, setMounted] = useState(false);
@@ -42,7 +40,6 @@ export default function IssuerPortal() {
   const [createdStudentNotice, setCreatedStudentNotice] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Direct In-App Modals (no browser window prompts)
   const [editingRecord, setEditingRecord] = useState(null);
   const [inspectingRecord, setInspectingRecord] = useState(null);
   const [revokingRecord, setRevokingRecord] = useState(null);
@@ -60,119 +57,6 @@ export default function IssuerPortal() {
       setFormData((prev) => ({ ...prev, institution: user.institution }));
     }
   }, [user]);
-
-  const generatePDF = async (record) => {
-    try {
-      const isRevoked = record.status === "REVOKED";
-      const qrData = JSON.stringify({
-        credentialId: record.id,
-        docType: record.docType,
-        institution: record.institution,
-        hash: record.hash,
-        status: record.status || "VALID",
-        studentId: record.studentId,
-        studentKey: record.studentKey,
-        timestamp: record.timestamp,
-      });
-
-      const qrDataUrl = await QRCode.toDataURL(qrData, { margin: 1 });
-      const formattedDate = new Date(record.timestamp * 1000).toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
-
-      const instName = (record.institution || "SOLANA TECHNICAL UNIVERSITY").toUpperCase();
-
-      if (record.docType === "DEGREE CERTIFICATE") {
-        const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-        const pageWidth = 297;
-        const pageHeight = 210;
-
-        doc.setFillColor(254, 252, 246);
-        doc.rect(0, 0, pageWidth, pageHeight, "F");
-
-        doc.setDrawColor(isRevoked ? 220 : 180, isRevoked ? 38 : 140, isRevoked ? 38 : 60);
-        doc.setLineWidth(2.5);
-        doc.rect(8, 8, pageWidth - 16, pageHeight - 16);
-
-        doc.setDrawColor(15, 23, 42);
-        doc.setLineWidth(0.8);
-        doc.rect(12, 12, pageWidth - 24, pageHeight - 24);
-
-        if (isRevoked) {
-          doc.setFont("times", "bold");
-          doc.setFontSize(55);
-          doc.setTextColor(239, 68, 68);
-          doc.text("REVOKED / INVALID", pageWidth / 2, pageHeight / 2, { align: "center", angle: 35 });
-        }
-
-        doc.setFont("times", "bold");
-        doc.setFontSize(24);
-        doc.setTextColor(15, 23, 42);
-        doc.text(instName, pageWidth / 2, 32, { align: "center" });
-
-        doc.setFont("times", "bolditalic");
-        doc.setFontSize(28);
-        doc.setTextColor(isRevoked ? 180 : 16, isRevoked ? 28 : 100, isRevoked ? 28 : 70);
-        doc.text(record.studentName, pageWidth / 2, 70, { align: "center" });
-
-        doc.setFont("times", "bold");
-        doc.setFontSize(22);
-        doc.setTextColor(15, 23, 42);
-        doc.text(record.degree || "Bachelor of Technology", pageWidth / 2, 104, { align: "center" });
-
-        doc.setFont("times", "normal");
-        doc.setFontSize(11);
-        doc.setTextColor(51, 65, 85);
-        doc.text(`CGPA: ${record.cgpa || "N/A"} / 10.0`, pageWidth / 2, 114, { align: "center" });
-
-        doc.setDrawColor(226, 232, 240);
-        doc.setFillColor(248, 250, 252);
-        doc.roundedRect(22, 138, 175, 24, 2, 2, "FD");
-
-        doc.setFont("courier", "normal");
-        doc.setFontSize(7.5);
-        doc.setTextColor(100, 116, 139);
-        doc.text(`Credential ID : ${record.id}`, 26, 145);
-        doc.text(`Status        : ${record.status || "VALID"}`, 26, 151);
-
-        doc.addImage(qrDataUrl, "PNG", pageWidth - 65, 134, 42, 42);
-        doc.save(`degree_${record.studentId}${isRevoked ? "_REVOKED" : ""}.pdf`);
-        return;
-      }
-
-      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      const pageWidth = 210;
-
-      doc.setFillColor(15, 23, 42);
-      doc.rect(0, 0, pageWidth, 35, "F");
-      doc.setTextColor(255, 255, 255);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(16);
-      doc.text(instName, pageWidth / 2, 22, { align: "center" });
-
-      if (isRevoked) {
-        doc.setFontSize(40);
-        doc.setTextColor(239, 68, 68);
-        doc.text("REVOKED", pageWidth / 2, 140, { align: "center", angle: 45 });
-      }
-
-      doc.setTextColor(30, 41, 59);
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Document: ${record.docType}`, 20, 50);
-      doc.text(`Student: ${record.studentName}`, 20, 62);
-      doc.text(`ID: ${record.studentId}`, 20, 74);
-      doc.text(`Status: ${record.status || "VALID"}`, 20, 86);
-      doc.text(`Credential ID: ${record.id}`, 20, 98);
-
-      doc.addImage(qrDataUrl, "PNG", 130, 150, 55, 55);
-      doc.save(`cert_${record.studentId}${isRevoked ? "_REVOKED" : ""}.pdf`);
-    } catch (err) {
-      console.error("PDF generation failed:", err);
-    }
-  };
 
   const handleSaveEdit = (e) => {
     e.preventDefault();
@@ -279,8 +163,6 @@ export default function IssuerPortal() {
       const updated = saveCertificate(certRecord);
       setIssuedHistory([...updated]);
 
-      await generatePDF(certRecord);
-
       try {
         await sendIssuanceEmail({
           studentName: formData.studentName,
@@ -292,10 +174,10 @@ export default function IssuerPortal() {
           adminEmail: user?.username || "admin@university.edu",
         });
       } catch (e) {
-        console.warn("Email notice bypassed", e);
+        console.warn("Email dispatch error", e);
       }
 
-      setStatus(`Certificate issued & record stored successfully!`);
+      setStatus(`Certificate successfully signed and anchored! Student can now view and download it.`);
     } catch (err) {
       console.error(err);
       setErrorMsg(err.message || "Transaction failed");
@@ -401,7 +283,7 @@ export default function IssuerPortal() {
 
           <div className="p-4 bg-[#0a0f1d] border border-purple-900/50 rounded-xl space-y-3">
             <p className="text-xs font-semibold text-purple-300 uppercase tracking-wider">
-              Student Vault Login Credentials
+              Student Vault Credentials
             </p>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -486,9 +368,9 @@ export default function IssuerPortal() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition disabled:opacity-50"
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition disabled:opacity-50 cursor-pointer"
               >
-                {loading ? "Processing..." : `Sign, Anchor & Issue ${formData.docType}`}
+                {loading ? "Processing..." : `Sign, Anchor & Store ${formData.docType}`}
               </button>
             )}
           </div>
@@ -500,7 +382,7 @@ export default function IssuerPortal() {
         <div className="flex justify-between items-center mb-6">
           <div>
             <h2 className="text-lg font-bold text-white">Live Ledger Database Registry</h2>
-            <p className="text-xs text-slate-400">View, inspect raw JSON, update fields, or revoke active credentials</p>
+            <p className="text-xs text-slate-400">View, inspect raw JSON, update fields, or revoke credentials</p>
           </div>
           <span className="bg-purple-950/60 border border-purple-800 text-purple-300 font-bold px-3.5 py-1 rounded-full text-xs">
             {issuedHistory.length} Database Rows
@@ -562,13 +444,6 @@ export default function IssuerPortal() {
                           className="bg-blue-950/80 hover:bg-blue-900 border border-blue-800 text-blue-300 px-2.5 py-1.5 rounded text-[11px] font-semibold transition cursor-pointer"
                         >
                           Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => generatePDF(item)}
-                          className="bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 px-2.5 py-1.5 rounded text-[11px] font-semibold transition cursor-pointer"
-                        >
-                          PDF
                         </button>
                         {item.status !== "REVOKED" ? (
                           <button
