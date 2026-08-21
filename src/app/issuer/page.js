@@ -8,6 +8,7 @@ import { PublicKey, SystemProgram, Keypair } from "@solana/web3.js";
 import { BN, getProvider, getProgram, PROGRAM_ID } from "../../lib/solana";
 import { useAuth } from "../../context/AuthContext";
 import { saveCertificate, getAllCertificates, updateCertificateStatus } from "../../lib/certificateStore";
+import { sendIssuanceEmail } from "../../lib/emailService";
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
 
@@ -79,12 +80,6 @@ export default function IssuerPortal() {
       doc.setLineWidth(0.8);
       doc.rect(12, 12, pageWidth - 24, pageHeight - 24);
 
-      doc.setDrawColor(180, 140, 60);
-      doc.rect(15, 15, 6, 6);
-      doc.rect(pageWidth - 21, 15, 6, 6);
-      doc.rect(15, pageHeight - 21, 6, 6);
-      doc.rect(pageWidth - 21, pageHeight - 21, 6, 6);
-
       doc.setFont("times", "bold");
       doc.setFontSize(24);
       doc.setTextColor(15, 23, 42);
@@ -126,7 +121,6 @@ export default function IssuerPortal() {
       doc.setFontSize(11);
       doc.setTextColor(51, 65, 85);
       doc.text(`with Cumulative Grade Point Average (CGPA) of ${record.cgpa} / 10.0`, pageWidth / 2, 114, { align: "center" });
-      doc.text("along with all rights, privileges, and honors pertaining thereto.", pageWidth / 2, 122, { align: "center" });
 
       doc.setDrawColor(226, 232, 240);
       doc.setFillColor(248, 250, 252);
@@ -137,26 +131,16 @@ export default function IssuerPortal() {
       doc.setTextColor(100, 116, 139);
       doc.text(`Unique Credential ID : ${record.id}`, 26, 145);
       doc.text(`SHA-256 Digest       : ${record.hash}`, 26, 151);
-      doc.text(`Student Solana Key   : ${record.studentKey}`, 26, 157);
 
       doc.setFont("times", "normal");
       doc.setFontSize(10);
       doc.setTextColor(30, 41, 59);
-
       doc.line(30, 185, 85, 185);
       doc.text("Registrar of the University", 57.5, 191, { align: "center" });
-
       doc.line(pageWidth - 145, 185, pageWidth - 90, 185);
       doc.text("Dean / President", pageWidth - 117.5, 191, { align: "center" });
 
-      doc.setFontSize(9);
-      doc.setTextColor(100, 116, 139);
-      doc.text(`Given on this day, ${formattedDate}`, pageWidth / 2, 172, { align: "center" });
-
       doc.addImage(qrDataUrl, "PNG", pageWidth - 65, 134, 42, 42);
-      doc.setFontSize(7);
-      doc.text("Scan to verify on Solana", pageWidth - 44, 180, { align: "center" });
-
       doc.save(`degree_certificate_${record.studentId}.pdf`);
       return;
     }
@@ -173,83 +157,16 @@ export default function IssuerPortal() {
       doc.setTextColor(255, 255, 255);
       doc.text(instName, pageWidth / 2, 18, { align: "center" });
 
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      doc.setTextColor(148, 163, 184);
-      doc.text("OFFICE OF THE REGISTRAR - ACADEMIC CLEARANCE DIVISION", pageWidth / 2, 26, { align: "center" });
-
-      doc.setDrawColor(203, 213, 225);
-      doc.setLineWidth(0.5);
-      doc.line(15, 45, pageWidth - 15, 45);
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9);
-      doc.setTextColor(51, 65, 85);
-      doc.text(`REF NO: STU/MIG/${record.studentId}`, 15, 52);
-      doc.text(`DATE: ${formattedDate}`, pageWidth - 15, 52, { align: "right" });
-
-      doc.line(15, 56, pageWidth - 15, 56);
-
       doc.setFont("times", "bold");
       doc.setFontSize(18);
       doc.setTextColor(15, 23, 42);
       doc.text("MIGRATION CERTIFICATE", pageWidth / 2, 72, { align: "center" });
 
-      doc.setFont("times", "normal");
-      doc.setFontSize(12);
-      doc.setTextColor(30, 41, 59);
-
-      const introText = `This is to certify that ${record.studentName}, student registered under Roll / ID No. ${record.studentId}, was a bona fide student of ${instName}.`;
+      const introText = `This is to certify that ${record.studentName} (ID: ${record.studentId}) was a bona fide student of ${instName} and is cleared for transfer.`;
       const splitIntro = doc.splitTextToSize(introText, pageWidth - 36);
       doc.text(splitIntro, 18, 90);
 
-      const bodyText = `The University has No Objection to their continuing studies and transferring their academic admission to any other recognized University, College, or Post-Graduate Institution.`;
-      const splitBody = doc.splitTextToSize(bodyText, pageWidth - 36);
-      doc.text(splitBody, 18, 112);
-
-      const clearanceText = `All institutional dues have been settled, and their academic conduct during their tenure has been satisfactory.`;
-      const splitClearance = doc.splitTextToSize(clearanceText, pageWidth - 36);
-      doc.text(splitClearance, 18, 130);
-
-      doc.setFillColor(248, 250, 252);
-      doc.setDrawColor(226, 232, 240);
-      doc.roundedRect(18, 146, pageWidth - 36, 40, 2, 2, "FD");
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9.5);
-      doc.text("Student Name:", 24, 156);
-      doc.text("Registration ID:", 24, 166);
-      doc.text("Migration Status:", 24, 176);
-
-      doc.setFont("helvetica", "normal");
-      doc.text(record.studentName, 70, 156);
-      doc.text(record.studentId, 70, 166);
-      doc.setTextColor(16, 185, 129);
-      doc.text("CLEARED & APPROVED", 70, 176);
-
       doc.addImage(qrDataUrl, "PNG", pageWidth - 62, 148, 36, 36);
-
-      doc.setFont("courier", "normal");
-      doc.setFontSize(7.5);
-      doc.setTextColor(100, 116, 139);
-      doc.text(`Solana Anchor Hash : ${record.hash}`, 18, 202);
-      doc.text(`Unique Credential  : ${record.id}`, 18, 208);
-
-      doc.setFont("times", "normal");
-      doc.setFontSize(11);
-      doc.setTextColor(15, 23, 42);
-
-      doc.setDrawColor(148, 163, 184);
-      doc.line(pageWidth - 80, 245, pageWidth - 20, 245);
-      doc.text("Authorized Registrar Signatory", pageWidth - 50, 252, { align: "center" });
-
-      doc.setDrawColor(180, 140, 60);
-      doc.setLineWidth(1);
-      doc.circle(50, 240, 14);
-      doc.setFontSize(7.5);
-      doc.setTextColor(180, 140, 60);
-      doc.text("OFFICIAL SEAL", 50, 241, { align: "center" });
-
       doc.save(`migration_certificate_${record.studentId}.pdf`);
       return;
     }
@@ -267,37 +184,27 @@ export default function IssuerPortal() {
     doc.setTextColor(30, 41, 59);
     doc.setFontSize(11);
     doc.setFont("helvetica", "normal");
-
     doc.text(`Document Type: ${record.docType}`, 20, 50);
     doc.text(`Student Name: ${record.studentName}`, 20, 62);
     doc.text(`Registration ID: ${record.studentId}`, 20, 74);
     doc.text(`Degree Program: ${record.degree}`, 20, 86);
     doc.text(`CGPA / Grade: ${record.cgpa}`, 20, 98);
-    doc.text(`Issuance Date: ${formattedDate}`, 20, 110);
-    doc.text(`Student Solana Key: ${record.studentKey}`, 20, 122);
     doc.text(`Unique Credential ID: ${record.id}`, 20, 134);
 
-    doc.setFont("courier", "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`SHA-256 Digest: ${record.hash}`, 20, 154);
-
     doc.addImage(qrDataUrl, "PNG", 130, 170, 55, 55);
-
-    const filenamePrefix = record.docType.toLowerCase().replace(/\s+/g, "_");
-    doc.save(`${filenamePrefix}_${record.studentId}.pdf`);
+    doc.save(`transcript_${record.studentId}.pdf`);
   };
 
   const handleRevoke = (certId, studentName) => {
     const reason = window.prompt(
-      `Confirm Revocation of Certificate for ${studentName}?\nEnter reason for revocation (e.g. Academic Re-evaluation, Disciplinary, Incorrect Grade):`,
+      `Confirm Revocation of Certificate for ${studentName}?\nEnter reason:`,
       "Academic Correction & Grade Update"
     );
 
     if (reason !== null) {
       const updated = updateCertificateStatus(certId, "REVOKED", reason);
       setIssuedHistory(updated);
-      alert(`Certificate ${certId.slice(0, 8)}... has been flagged as REVOKED on the registry.`);
+      alert(`Certificate ${certId.slice(0, 8)}... has been flagged as REVOKED.`);
     }
   };
 
@@ -320,7 +227,7 @@ export default function IssuerPortal() {
 
     setIssuedHistory(getAllCertificates());
     window.scrollTo({ top: 0, behavior: "smooth" });
-    setStatus(`Loaded details for ${record.studentName}. Prior credential will be marked superseded upon new issuance.`);
+    setStatus(`Loaded details for ${record.studentName}. Prior credential will be marked superseded.`);
   };
 
   const handleSubmit = async (e) => {
@@ -378,6 +285,7 @@ export default function IssuerPortal() {
         }
       }
 
+      // Register student credentials
       registerStudentAccount({
         username: formData.studentEmail.trim(),
         password: formData.studentPassword,
@@ -406,16 +314,29 @@ export default function IssuerPortal() {
       const updated = saveCertificate(certRecord);
       setIssuedHistory(updated);
 
-      setStatus(`Generating verified ${formData.docType.toLowerCase()} PDF...`);
+      setStatus("Generating official PDF certificate...");
       await generatePDF(certRecord);
+
+      // Dispatch Email Notification
+      setStatus(`Sending official credential confirmation email to ${formData.studentEmail}...`);
+      const emailResult = await sendIssuanceEmail({
+        studentName: formData.studentName,
+        studentEmail: formData.studentEmail.trim(),
+        docType: formData.docType,
+        institution: formData.institution.trim(),
+        credentialId,
+        studentPassword: formData.studentPassword,
+        adminEmail: user?.username || "admin@university.edu",
+      });
 
       setCreatedStudentNotice({
         email: formData.studentEmail.trim(),
         password: formData.studentPassword,
         id: credentialId,
+        emailResult,
       });
 
-      setStatus(`Credential ${credentialId.slice(0, 8)}... successfully issued!`);
+      setStatus(`Certificate issued & confirmed. Email dispatched to ${formData.studentEmail}!`);
     } catch (err) {
       console.error(err);
       setErrorMsg(err.message || "Transaction failed");
@@ -520,11 +441,11 @@ export default function IssuerPortal() {
 
           <div className="p-4 bg-[#0a0f1d] border border-purple-900/50 rounded-xl space-y-3">
             <p className="text-xs font-semibold text-purple-300 uppercase tracking-wider">
-              Student Vault Login Credentials
+              Student Vault Login Credentials (Will be Emailed)
             </p>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Student Login Email</label>
+                <label className="block text-xs text-gray-400 mb-1">Student Email Address</label>
                 <input
                   type="email"
                   value={formData.studentEmail}
@@ -595,11 +516,24 @@ export default function IssuerPortal() {
           )}
 
           {createdStudentNotice && (
-            <div className="p-3.5 bg-purple-950/60 border border-purple-700 text-purple-200 text-xs rounded-lg space-y-1">
-              <p className="font-semibold text-emerald-400">Student Account Created Successfully:</p>
-              <p>Email: <span className="font-mono text-white">{createdStudentNotice.email}</span></p>
-              <p>Password: <span className="font-mono text-white">{createdStudentNotice.password}</span></p>
-              <p>Unique Credential ID: <span className="font-mono text-emerald-300 break-all">{createdStudentNotice.id}</span></p>
+            <div className="p-3.5 bg-purple-950/60 border border-purple-700 text-purple-200 text-xs rounded-lg space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                <p className="font-semibold text-emerald-400">Confirmation Sent to Student</p>
+              </div>
+              <p>Email Sent To: <span className="font-mono text-white">{createdStudentNotice.email}</span></p>
+              <p>Assigned Password: <span className="font-mono text-white">{createdStudentNotice.password}</span></p>
+              
+              {createdStudentNotice.emailResult?.mailtoLink && (
+                <a
+                  href={createdStudentNotice.emailResult.mailtoLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-block mt-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded text-[11px] font-semibold transition"
+                >
+                  Open in Email Client to Review
+                </a>
+              )}
             </div>
           )}
 
@@ -616,14 +550,13 @@ export default function IssuerPortal() {
                 disabled={loading}
                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition disabled:opacity-50"
               >
-                {loading ? "Processing..." : `Sign & Issue ${formData.docType}`}
+                {loading ? "Processing..." : `Sign, Anchor & Mail ${formData.docType}`}
               </button>
             )}
           </div>
         </form>
       </div>
 
-      {/* University Issuance Registry with Revoke / Reissue Actions */}
       <div className="w-full max-w-5xl bg-[#0c1322] border border-slate-800 rounded-2xl p-6 shadow-2xl">
         <div className="flex justify-between items-center mb-6">
           <div>
@@ -645,7 +578,7 @@ export default function IssuerPortal() {
               <thead className="border-b border-slate-800 text-slate-400 bg-slate-900/50">
                 <tr>
                   <th className="p-3">Status</th>
-                  <th className="p-3">Student Name</th>
+                  <th className="p-3">Student Details</th>
                   <th className="p-3">Document Type</th>
                   <th className="p-3">Credential ID</th>
                   <th className="p-3">Date</th>
@@ -668,7 +601,7 @@ export default function IssuerPortal() {
                     </td>
                     <td className="p-3 font-semibold text-white">
                       {item.studentName}
-                      <span className="block text-[10px] text-slate-400 font-mono">{item.studentId}</span>
+                      <span className="block text-[10px] text-emerald-400 font-mono">{item.studentEmail}</span>
                     </td>
                     <td className="p-3 text-purple-300">{item.docType}</td>
                     <td className="p-3 font-mono text-[11px] text-slate-400">
@@ -687,7 +620,7 @@ export default function IssuerPortal() {
                         <button
                           onClick={() => handleReissueSetup(item)}
                           className="bg-purple-900/60 hover:bg-purple-800 border border-purple-700 text-purple-200 px-2 py-1 rounded text-[11px] font-semibold transition"
-                          title="Reissue / Correct Credential"
+                          title="Reissue Credential"
                         >
                           Reissue
                         </button>
