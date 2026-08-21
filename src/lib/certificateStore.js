@@ -51,6 +51,20 @@ export function saveCertificate(certRecord) {
   return updated;
 }
 
+export function updateCertificateRecord(id, updatedFields) {
+  const all = getAllCertificates();
+  const updated = all.map((c) => (c.id === id ? { ...c, ...updatedFields } : c));
+  localStorage.setItem(CERTS_KEY, JSON.stringify(updated));
+  return updated;
+}
+
+export function deleteCertificateRecord(id) {
+  const all = getAllCertificates();
+  const updated = all.filter((c) => c.id !== id);
+  localStorage.setItem(CERTS_KEY, JSON.stringify(updated));
+  return updated;
+}
+
 export function updateCertificateStatus(id, newStatus, reason = "") {
   const all = getAllCertificates();
   const updated = all.map((c) => {
@@ -82,7 +96,6 @@ export function findCertificateByIdOrHash(query) {
   );
 }
 
-// Selective Sharing Token Storage
 export function createSelectiveShareToken({ certId, selectedFields, durationHours }) {
   const tokens = getShareTokens();
   const tokenId = "share_" + Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
@@ -95,7 +108,7 @@ export function createSelectiveShareToken({ certId, selectedFields, durationHour
   const newToken = {
     tokenId,
     certId,
-    selectedFields, // e.g. { name: true, degree: true, cgpa: false, roll: false }
+    selectedFields,
     expiryTimestamp,
     createdAt: Math.floor(Date.now() / 1000),
   };

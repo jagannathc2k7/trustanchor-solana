@@ -42,13 +42,15 @@ export default function IssuerPortal() {
   const [createdStudentNotice, setCreatedStudentNotice] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Modals state
+  // Direct In-App Modals (no browser window prompts)
   const [editingRecord, setEditingRecord] = useState(null);
   const [inspectingRecord, setInspectingRecord] = useState(null);
+  const [revokingRecord, setRevokingRecord] = useState(null);
+  const [revokeReason, setRevokeReason] = useState("Academic Correction & Grade Discrepancy");
 
   const refreshHistory = () => {
     const list = getAllCertificates();
-    setIssuedHistory(list);
+    setIssuedHistory([...list]);
   };
 
   useEffect(() => {
@@ -169,35 +171,27 @@ export default function IssuerPortal() {
       doc.save(`cert_${record.studentId}${isRevoked ? "_REVOKED" : ""}.pdf`);
     } catch (err) {
       console.error("PDF generation failed:", err);
-      alert("Could not generate PDF: " + err.message);
     }
   };
 
   const handleSaveEdit = (e) => {
     e.preventDefault();
     if (!editingRecord) return;
-    updateCertificateRecord(editingRecord.id, editingRecord);
-    refreshHistory();
+    const updated = updateCertificateRecord(editingRecord.id, editingRecord);
+    setIssuedHistory([...updated]);
     setEditingRecord(null);
   };
 
-  const handleDelete = (id, name) => {
-    if (window.confirm(`Delete record for ${name}? This will remove it from the database.`)) {
-      deleteCertificateRecord(id);
-      refreshHistory();
-    }
+  const handleDelete = (id) => {
+    const updated = deleteCertificateRecord(id);
+    setIssuedHistory([...updated]);
   };
 
-  const handleRevoke = (certId, studentName) => {
-    const reason = window.prompt(
-      `Confirm Revocation of Certificate for ${studentName}?\nEnter reason:`,
-      "Academic Correction & Grade Update"
-    );
-
-    if (reason !== null) {
-      updateCertificateStatus(certId, "REVOKED", reason);
-      refreshHistory();
-    }
+  const handleConfirmRevocation = () => {
+    if (!revokingRecord) return;
+    const updated = updateCertificateStatus(revokingRecord.id, "REVOKED", revokeReason);
+    setIssuedHistory([...updated]);
+    setRevokingRecord(null);
   };
 
   const handleSubmit = async (e) => {
@@ -282,8 +276,8 @@ export default function IssuerPortal() {
         timestamp: now,
       };
 
-      saveCertificate(certRecord);
-      refreshHistory();
+      const updated = saveCertificate(certRecord);
+      setIssuedHistory([...updated]);
 
       await generatePDF(certRecord);
 
@@ -558,37 +552,40 @@ export default function IssuerPortal() {
                         <button
                           type="button"
                           onClick={() => setInspectingRecord(item)}
-                          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1.5 rounded text-[11px] font-semibold transition"
+                          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1.5 rounded text-[11px] font-semibold transition cursor-pointer"
                         >
                           View
                         </button>
                         <button
                           type="button"
                           onClick={() => setEditingRecord({ ...item })}
-                          className="bg-blue-950/80 hover:bg-blue-900 border border-blue-800 text-blue-300 px-2.5 py-1.5 rounded text-[11px] font-semibold transition"
+                          className="bg-blue-950/80 hover:bg-blue-900 border border-blue-800 text-blue-300 px-2.5 py-1.5 rounded text-[11px] font-semibold transition cursor-pointer"
                         >
                           Edit
                         </button>
                         <button
                           type="button"
                           onClick={() => generatePDF(item)}
-                          className="bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 px-2.5 py-1.5 rounded text-[11px] font-semibold transition"
+                          className="bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 px-2.5 py-1.5 rounded text-[11px] font-semibold transition cursor-pointer"
                         >
                           PDF
                         </button>
                         {item.status !== "REVOKED" ? (
                           <button
                             type="button"
-                            onClick={() => handleRevoke(item.id, item.studentName)}
-                            className="bg-red-950/80 hover:bg-red-900 border border-red-800 text-red-300 px-2.5 py-1.5 rounded text-[11px] font-semibold transition"
+                            onClick={() => {
+                              setRevokingRecord(item);
+                              setRevokeReason("Academic Correction & Grade Discrepancy");
+                            }}
+                            className="bg-red-950/80 hover:bg-red-900 border border-red-800 text-red-300 px-2.5 py-1.5 rounded text-[11px] font-semibold transition cursor-pointer"
                           >
                             Revoke
                           </button>
                         ) : (
                           <button
                             type="button"
-                            onClick={() => handleDelete(item.id, item.studentName)}
-                            className="bg-red-950/40 hover:bg-red-900 border border-red-900/60 text-red-400 px-2.5 py-1.5 rounded text-[11px] font-semibold transition"
+                            onClick={() => handleDelete(item.id)}
+                            className="bg-red-950/40 hover:bg-red-900 border border-red-900/60 text-red-400 px-2.5 py-1.5 rounded text-[11px] font-semibold transition cursor-pointer"
                           >
                             Delete
                           </button>
@@ -610,53 +607,53 @@ export default function IssuerPortal() {
             <h3 className="text-base font-bold text-white mb-4">Edit Ledger Record</h3>
             <form onSubmit={handleSaveEdit} className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-400 mb-1">Student Name</label>
+                <label className="block text-slate-400 mb-1 font-semibold">Student Name</label>
                 <input
                   type="text"
                   value={editingRecord.studentName || ""}
                   onChange={(e) => setEditingRecord({ ...editingRecord, studentName: e.target.value })}
-                  className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2.5 text-white"
+                  className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2.5 text-white focus:border-purple-500 outline-none"
                   required
                 />
               </div>
               <div>
-                <label className="block text-slate-400 mb-1">Institution</label>
+                <label className="block text-slate-400 mb-1 font-semibold">Institution Name</label>
                 <input
                   type="text"
                   value={editingRecord.institution || ""}
                   onChange={(e) => setEditingRecord({ ...editingRecord, institution: e.target.value })}
-                  className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2.5 text-white"
+                  className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2.5 text-white focus:border-purple-500 outline-none"
                   required
                 />
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-slate-400 mb-1">Degree Program</label>
+                  <label className="block text-slate-400 mb-1 font-semibold">Degree / Program</label>
                   <input
                     type="text"
                     value={editingRecord.degree || ""}
                     onChange={(e) => setEditingRecord({ ...editingRecord, degree: e.target.value })}
-                    className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2.5 text-white"
+                    className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2.5 text-white focus:border-purple-500 outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1">CGPA / Grade</label>
+                  <label className="block text-slate-400 mb-1 font-semibold">CGPA / Grade</label>
                   <input
                     type="text"
                     value={editingRecord.cgpa || ""}
                     onChange={(e) => setEditingRecord({ ...editingRecord, cgpa: e.target.value })}
-                    className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2.5 text-white"
+                    className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2.5 text-white focus:border-purple-500 outline-none"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-slate-400 mb-1">Status</label>
+                <label className="block text-slate-400 mb-1 font-semibold">Ledger Status</label>
                 <select
                   value={editingRecord.status || "VALID"}
                   onChange={(e) => setEditingRecord({ ...editingRecord, status: e.target.value })}
-                  className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2.5 text-white"
+                  className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2.5 text-white focus:border-purple-500 outline-none"
                 >
-                  <option value="VALID">VALID (Active)</option>
+                  <option value="VALID">VALID (Active on Solana)</option>
                   <option value="REVOKED">REVOKED</option>
                 </select>
               </div>
@@ -665,18 +662,55 @@ export default function IssuerPortal() {
                 <button
                   type="button"
                   onClick={() => setEditingRecord(null)}
-                  className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-semibold"
+                  className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-semibold transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold"
+                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition cursor-pointer"
                 >
                   Save Changes
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* REVOCATION MODAL */}
+      {revokingRecord && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0c1322] border border-red-800/80 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <h3 className="text-base font-bold text-red-300">Revoke Certificate</h3>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              You are flagging the credential for <span className="font-bold text-white">{revokingRecord.studentName}</span> as <span className="font-bold text-red-400">REVOKED</span> on the ledger.
+            </p>
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 mb-1">Reason for Revocation</label>
+              <textarea
+                rows="3"
+                value={revokeReason}
+                onChange={(e) => setRevokeReason(e.target.value)}
+                className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:border-red-500 outline-none"
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setRevokingRecord(null)}
+                className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRevocation}
+                className="flex-1 py-2.5 bg-red-700 hover:bg-red-800 text-white rounded-lg text-xs font-semibold transition cursor-pointer"
+              >
+                Confirm Revocation
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -690,7 +724,7 @@ export default function IssuerPortal() {
               <button
                 type="button"
                 onClick={() => setInspectingRecord(null)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-white cursor-pointer"
               >
                 ✕
               </button>
@@ -702,7 +736,7 @@ export default function IssuerPortal() {
               <button
                 type="button"
                 onClick={() => setInspectingRecord(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold transition cursor-pointer"
               >
                 Close Inspector
               </button>
