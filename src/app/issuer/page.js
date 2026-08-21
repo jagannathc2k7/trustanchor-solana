@@ -25,7 +25,7 @@ export default function IssuerPortal() {
   const { connected, publicKey } = wallet;
 
   const [formData, setFormData] = useState({
-    institution: "Solana Technical University",
+    institution: "VIT Chennai",
     docType: "OFFICIAL ACADEMIC TRANSCRIPT",
     studentName: "Alex Morgan",
     studentId: "CS-2026-8841",
@@ -42,116 +42,149 @@ export default function IssuerPortal() {
   const [createdStudentNotice, setCreatedStudentNotice] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Edit / Inspect Modal States
+  // Modals state
   const [editingRecord, setEditingRecord] = useState(null);
   const [inspectingRecord, setInspectingRecord] = useState(null);
 
+  const refreshHistory = () => {
+    const list = getAllCertificates();
+    setIssuedHistory(list);
+  };
+
   useEffect(() => {
     setMounted(true);
-    setIssuedHistory(getAllCertificates());
+    refreshHistory();
     if (user?.institution) {
       setFormData((prev) => ({ ...prev, institution: user.institution }));
     }
   }, [user]);
 
   const generatePDF = async (record) => {
-    const qrData = JSON.stringify({
-      credentialId: record.id,
-      docType: record.docType,
-      institution: record.institution,
-      hash: record.hash,
-      studentId: record.studentId,
-      studentKey: record.studentKey,
-      status: record.status || "VALID",
-      timestamp: record.timestamp,
-    });
-    const qrDataUrl = await QRCode.toDataURL(qrData, { margin: 1 });
-    const formattedDate = new Date(record.timestamp * 1000).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
+    try {
+      const isRevoked = record.status === "REVOKED";
+      const qrData = JSON.stringify({
+        credentialId: record.id,
+        docType: record.docType,
+        institution: record.institution,
+        hash: record.hash,
+        status: record.status || "VALID",
+        studentId: record.studentId,
+        studentKey: record.studentKey,
+        timestamp: record.timestamp,
+      });
 
-    const instName = (record.institution || "SOLANA TECHNICAL UNIVERSITY").toUpperCase();
+      const qrDataUrl = await QRCode.toDataURL(qrData, { margin: 1 });
+      const formattedDate = new Date(record.timestamp * 1000).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
 
-    if (record.docType === "DEGREE CERTIFICATE") {
-      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-      const pageWidth = 297;
-      const pageHeight = 210;
+      const instName = (record.institution || "SOLANA TECHNICAL UNIVERSITY").toUpperCase();
 
-      doc.setFillColor(254, 252, 246);
-      doc.rect(0, 0, pageWidth, pageHeight, "F");
+      if (record.docType === "DEGREE CERTIFICATE") {
+        const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+        const pageWidth = 297;
+        const pageHeight = 210;
 
-      doc.setDrawColor(180, 140, 60);
-      doc.setLineWidth(2.5);
-      doc.rect(8, 8, pageWidth - 16, pageHeight - 16);
+        doc.setFillColor(254, 252, 246);
+        doc.rect(0, 0, pageWidth, pageHeight, "F");
 
-      doc.setDrawColor(15, 23, 42);
-      doc.setLineWidth(0.8);
-      doc.rect(12, 12, pageWidth - 24, pageHeight - 24);
+        doc.setDrawColor(isRevoked ? 220 : 180, isRevoked ? 38 : 140, isRevoked ? 38 : 60);
+        doc.setLineWidth(2.5);
+        doc.rect(8, 8, pageWidth - 16, pageHeight - 16);
 
-      doc.setFont("times", "bold");
-      doc.setFontSize(24);
-      doc.setTextColor(15, 23, 42);
-      doc.text(instName, pageWidth / 2, 32, { align: "center" });
+        doc.setDrawColor(15, 23, 42);
+        doc.setLineWidth(0.8);
+        doc.rect(12, 12, pageWidth - 24, pageHeight - 24);
 
-      doc.setFont("times", "bolditalic");
-      doc.setFontSize(28);
-      doc.setTextColor(16, 100, 70);
-      doc.text(record.studentName, pageWidth / 2, 70, { align: "center" });
+        if (isRevoked) {
+          doc.setFont("times", "bold");
+          doc.setFontSize(55);
+          doc.setTextColor(239, 68, 68);
+          doc.text("REVOKED / INVALID", pageWidth / 2, pageHeight / 2, { align: "center", angle: 35 });
+        }
 
-      doc.setFont("times", "bold");
-      doc.setFontSize(22);
-      doc.setTextColor(15, 23, 42);
-      doc.text(record.degree, pageWidth / 2, 104, { align: "center" });
+        doc.setFont("times", "bold");
+        doc.setFontSize(24);
+        doc.setTextColor(15, 23, 42);
+        doc.text(instName, pageWidth / 2, 32, { align: "center" });
 
-      doc.setFont("times", "normal");
+        doc.setFont("times", "bolditalic");
+        doc.setFontSize(28);
+        doc.setTextColor(isRevoked ? 180 : 16, isRevoked ? 28 : 100, isRevoked ? 28 : 70);
+        doc.text(record.studentName, pageWidth / 2, 70, { align: "center" });
+
+        doc.setFont("times", "bold");
+        doc.setFontSize(22);
+        doc.setTextColor(15, 23, 42);
+        doc.text(record.degree || "Bachelor of Technology", pageWidth / 2, 104, { align: "center" });
+
+        doc.setFont("times", "normal");
+        doc.setFontSize(11);
+        doc.setTextColor(51, 65, 85);
+        doc.text(`CGPA: ${record.cgpa || "N/A"} / 10.0`, pageWidth / 2, 114, { align: "center" });
+
+        doc.setDrawColor(226, 232, 240);
+        doc.setFillColor(248, 250, 252);
+        doc.roundedRect(22, 138, 175, 24, 2, 2, "FD");
+
+        doc.setFont("courier", "normal");
+        doc.setFontSize(7.5);
+        doc.setTextColor(100, 116, 139);
+        doc.text(`Credential ID : ${record.id}`, 26, 145);
+        doc.text(`Status        : ${record.status || "VALID"}`, 26, 151);
+
+        doc.addImage(qrDataUrl, "PNG", pageWidth - 65, 134, 42, 42);
+        doc.save(`degree_${record.studentId}${isRevoked ? "_REVOKED" : ""}.pdf`);
+        return;
+      }
+
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pageWidth = 210;
+
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 0, pageWidth, 35, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      doc.text(instName, pageWidth / 2, 22, { align: "center" });
+
+      if (isRevoked) {
+        doc.setFontSize(40);
+        doc.setTextColor(239, 68, 68);
+        doc.text("REVOKED", pageWidth / 2, 140, { align: "center", angle: 45 });
+      }
+
+      doc.setTextColor(30, 41, 59);
       doc.setFontSize(11);
-      doc.setTextColor(51, 65, 85);
-      doc.text(`CGPA: ${record.cgpa} / 10.0`, pageWidth / 2, 114, { align: "center" });
+      doc.setFont("helvetica", "normal");
+      doc.text(`Document: ${record.docType}`, 20, 50);
+      doc.text(`Student: ${record.studentName}`, 20, 62);
+      doc.text(`ID: ${record.studentId}`, 20, 74);
+      doc.text(`Status: ${record.status || "VALID"}`, 20, 86);
+      doc.text(`Credential ID: ${record.id}`, 20, 98);
 
-      doc.addImage(qrDataUrl, "PNG", pageWidth - 65, 134, 42, 42);
-      doc.save(`degree_${record.studentId}.pdf`);
-      return;
+      doc.addImage(qrDataUrl, "PNG", 130, 150, 55, 55);
+      doc.save(`cert_${record.studentId}${isRevoked ? "_REVOKED" : ""}.pdf`);
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+      alert("Could not generate PDF: " + err.message);
     }
-
-    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-    const pageWidth = 210;
-
-    doc.setFillColor(15, 23, 42);
-    doc.rect(0, 0, pageWidth, 35, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.text(instName, pageWidth / 2, 22, { align: "center" });
-
-    doc.setTextColor(30, 41, 59);
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Document: ${record.docType}`, 20, 50);
-    doc.text(`Student: ${record.studentName}`, 20, 62);
-    doc.text(`ID: ${record.studentId}`, 20, 74);
-    doc.text(`CGPA / Status: ${record.cgpa || "Cleared"}`, 20, 86);
-    doc.text(`Credential ID: ${record.id}`, 20, 98);
-
-    doc.addImage(qrDataUrl, "PNG", 130, 150, 55, 55);
-    doc.save(`cert_${record.studentId}.pdf`);
   };
 
   const handleSaveEdit = (e) => {
     e.preventDefault();
     if (!editingRecord) return;
-
-    const updated = updateCertificateRecord(editingRecord.id, editingRecord);
-    setIssuedHistory(updated);
+    updateCertificateRecord(editingRecord.id, editingRecord);
+    refreshHistory();
     setEditingRecord(null);
-    alert("Record updated successfully in the ledger database.");
   };
 
   const handleDelete = (id, name) => {
-    if (window.confirm(`Delete record for ${name}? This will remove it from the local registry.`)) {
-      const updated = deleteCertificateRecord(id);
-      setIssuedHistory(updated);
+    if (window.confirm(`Delete record for ${name}? This will remove it from the database.`)) {
+      deleteCertificateRecord(id);
+      refreshHistory();
     }
   };
 
@@ -162,8 +195,8 @@ export default function IssuerPortal() {
     );
 
     if (reason !== null) {
-      const updated = updateCertificateStatus(certId, "REVOKED", reason);
-      setIssuedHistory(updated);
+      updateCertificateStatus(certId, "REVOKED", reason);
+      refreshHistory();
     }
   };
 
@@ -222,14 +255,16 @@ export default function IssuerPortal() {
         }
       }
 
-      registerStudentAccount({
-        username: formData.studentEmail.trim(),
-        password: formData.studentPassword,
-        role: "student",
-        name: formData.studentName,
-        studentId: formData.studentId,
-        walletKey: formData.studentKey,
-      });
+      if (registerStudentAccount) {
+        registerStudentAccount({
+          username: formData.studentEmail.trim(),
+          password: formData.studentPassword,
+          role: "student",
+          name: formData.studentName,
+          studentId: formData.studentId,
+          walletKey: formData.studentKey,
+        });
+      }
 
       const certRecord = {
         id: credentialId,
@@ -247,20 +282,24 @@ export default function IssuerPortal() {
         timestamp: now,
       };
 
-      const updated = saveCertificate(certRecord);
-      setIssuedHistory(updated);
+      saveCertificate(certRecord);
+      refreshHistory();
 
       await generatePDF(certRecord);
 
-      await sendIssuanceEmail({
-        studentName: formData.studentName,
-        studentEmail: formData.studentEmail.trim(),
-        docType: formData.docType,
-        institution: formData.institution.trim(),
-        credentialId,
-        studentPassword: formData.studentPassword,
-        adminEmail: user?.username || "admin@university.edu",
-      });
+      try {
+        await sendIssuanceEmail({
+          studentName: formData.studentName,
+          studentEmail: formData.studentEmail.trim(),
+          docType: formData.docType,
+          institution: formData.institution.trim(),
+          credentialId,
+          studentPassword: formData.studentPassword,
+          adminEmail: user?.username || "admin@university.edu",
+        });
+      } catch (e) {
+        console.warn("Email notice bypassed", e);
+      }
 
       setStatus(`Certificate issued & record stored successfully!`);
     } catch (err) {
@@ -455,14 +494,14 @@ export default function IssuerPortal() {
                 disabled={loading}
                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition disabled:opacity-50"
               >
-                {loading ? "Processing..." : `Sign, Anchor & Mail ${formData.docType}`}
+                {loading ? "Processing..." : `Sign, Anchor & Issue ${formData.docType}`}
               </button>
             )}
           </div>
         </form>
       </div>
 
-      {/* University Issuance Registry with Full View/Edit Database Actions */}
+      {/* University Issuance Registry Table */}
       <div className="w-full max-w-5xl bg-[#0c1322] border border-slate-800 rounded-2xl p-6 shadow-2xl">
         <div className="flex justify-between items-center mb-6">
           <div>
@@ -517,39 +556,39 @@ export default function IssuerPortal() {
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
+                          type="button"
                           onClick={() => setInspectingRecord(item)}
-                          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded text-[11px] font-semibold transition"
-                          title="View Full JSON Record"
+                          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1.5 rounded text-[11px] font-semibold transition"
                         >
                           View
                         </button>
                         <button
+                          type="button"
                           onClick={() => setEditingRecord({ ...item })}
-                          className="bg-blue-950/60 hover:bg-blue-900 border border-blue-800 text-blue-300 px-2 py-1 rounded text-[11px] font-semibold transition"
-                          title="Edit Database Row"
+                          className="bg-blue-950/80 hover:bg-blue-900 border border-blue-800 text-blue-300 px-2.5 py-1.5 rounded text-[11px] font-semibold transition"
                         >
                           Edit
                         </button>
                         <button
+                          type="button"
                           onClick={() => generatePDF(item)}
-                          className="bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 px-2 py-1 rounded text-[11px] font-semibold transition"
-                          title="Download PDF"
+                          className="bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 px-2.5 py-1.5 rounded text-[11px] font-semibold transition"
                         >
                           PDF
                         </button>
                         {item.status !== "REVOKED" ? (
                           <button
+                            type="button"
                             onClick={() => handleRevoke(item.id, item.studentName)}
-                            className="bg-red-950/60 hover:bg-red-900 border border-red-800 text-red-300 px-2 py-1 rounded text-[11px] font-semibold transition"
-                            title="Revoke Certificate"
+                            className="bg-red-950/80 hover:bg-red-900 border border-red-800 text-red-300 px-2.5 py-1.5 rounded text-[11px] font-semibold transition"
                           >
                             Revoke
                           </button>
                         ) : (
                           <button
+                            type="button"
                             onClick={() => handleDelete(item.id, item.studentName)}
-                            className="bg-red-950/40 hover:bg-red-900 text-red-400 px-2 py-1 rounded text-[11px] font-semibold transition"
-                            title="Delete Record"
+                            className="bg-red-950/40 hover:bg-red-900 border border-red-900/60 text-red-400 px-2.5 py-1.5 rounded text-[11px] font-semibold transition"
                           >
                             Delete
                           </button>
@@ -568,15 +607,15 @@ export default function IssuerPortal() {
       {editingRecord && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#0c1322] border border-slate-800 rounded-2xl p-6 max-w-lg w-full shadow-2xl">
-            <h3 className="text-lg font-bold text-white mb-4">Edit Ledger Record</h3>
+            <h3 className="text-base font-bold text-white mb-4">Edit Ledger Record</h3>
             <form onSubmit={handleSaveEdit} className="space-y-3 text-xs">
               <div>
                 <label className="block text-slate-400 mb-1">Student Name</label>
                 <input
                   type="text"
-                  value={editingRecord.studentName}
+                  value={editingRecord.studentName || ""}
                   onChange={(e) => setEditingRecord({ ...editingRecord, studentName: e.target.value })}
-                  className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2 text-white"
+                  className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2.5 text-white"
                   required
                 />
               </div>
@@ -584,9 +623,9 @@ export default function IssuerPortal() {
                 <label className="block text-slate-400 mb-1">Institution</label>
                 <input
                   type="text"
-                  value={editingRecord.institution}
+                  value={editingRecord.institution || ""}
                   onChange={(e) => setEditingRecord({ ...editingRecord, institution: e.target.value })}
-                  className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2 text-white"
+                  className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2.5 text-white"
                   required
                 />
               </div>
@@ -597,7 +636,7 @@ export default function IssuerPortal() {
                     type="text"
                     value={editingRecord.degree || ""}
                     onChange={(e) => setEditingRecord({ ...editingRecord, degree: e.target.value })}
-                    className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2 text-white"
+                    className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2.5 text-white"
                   />
                 </div>
                 <div>
@@ -606,7 +645,7 @@ export default function IssuerPortal() {
                     type="text"
                     value={editingRecord.cgpa || ""}
                     onChange={(e) => setEditingRecord({ ...editingRecord, cgpa: e.target.value })}
-                    className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2 text-white"
+                    className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2.5 text-white"
                   />
                 </div>
               </div>
@@ -615,7 +654,7 @@ export default function IssuerPortal() {
                 <select
                   value={editingRecord.status || "VALID"}
                   onChange={(e) => setEditingRecord({ ...editingRecord, status: e.target.value })}
-                  className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2 text-white"
+                  className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2.5 text-white"
                 >
                   <option value="VALID">VALID (Active)</option>
                   <option value="REVOKED">REVOKED</option>
@@ -626,13 +665,13 @@ export default function IssuerPortal() {
                 <button
                   type="button"
                   onClick={() => setEditingRecord(null)}
-                  className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-semibold"
+                  className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold"
+                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold"
                 >
                   Save Changes
                 </button>
@@ -648,13 +687,20 @@ export default function IssuerPortal() {
           <div className="bg-[#0c1322] border border-slate-800 rounded-2xl p-6 max-w-xl w-full shadow-2xl">
             <div className="flex justify-between items-center mb-3">
               <h3 className="text-sm font-bold text-white">Database Row Inspector</h3>
-              <button onClick={() => setInspectingRecord(null)} className="text-slate-400 hover:text-white">✕</button>
+              <button
+                type="button"
+                onClick={() => setInspectingRecord(null)}
+                className="text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
             </div>
             <pre className="bg-[#050811] p-4 rounded-xl border border-slate-800 text-[11px] text-emerald-400 font-mono overflow-auto max-h-80">
               {JSON.stringify(inspectingRecord, null, 2)}
             </pre>
             <div className="mt-4 flex justify-end">
               <button
+                type="button"
                 onClick={() => setInspectingRecord(null)}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold"
               >
