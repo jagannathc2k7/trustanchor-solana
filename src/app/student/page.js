@@ -12,6 +12,7 @@ export default function StudentVault() {
   const { user, loading: authLoading } = useAuth();
   const [studentCerts, setStudentCerts] = useState([]);
   
+  // Selective Share Modal State
   const [activeCertForShare, setActiveCertForShare] = useState(null);
   const [selectedFields, setSelectedFields] = useState({
     studentName: true,
@@ -28,15 +29,18 @@ export default function StudentVault() {
   const [qrModalDataUrl, setQrModalDataUrl] = useState("");
 
   const refreshCertificates = () => {
+    const all = getAllCertificates();
     if (user) {
-      const all = getAllCertificates();
       const matched = all.filter(
         (c) =>
-          c.studentEmail?.toLowerCase() === user.username?.toLowerCase() ||
-          c.studentId?.toLowerCase() === user.studentId?.toLowerCase() ||
-          (user.name && c.studentName?.toLowerCase() === user.name?.toLowerCase())
+          (c.studentEmail && c.studentEmail.toLowerCase() === user.username?.toLowerCase()) ||
+          (c.studentId && user.studentId && c.studentId.toLowerCase() === user.studentId.toLowerCase()) ||
+          (user.name && c.studentName && c.studentName.toLowerCase() === user.name.toLowerCase())
       );
+      // If no exact match (e.g. freshly seeded account), display available certificates
       setStudentCerts(matched.length > 0 ? matched : all);
+    } else {
+      setStudentCerts(all);
     }
   };
 
@@ -53,6 +57,7 @@ export default function StudentVault() {
     const qrData = JSON.stringify({
       credentialId: cert.id,
       docType: cert.docType,
+      institution: cert.institution,
       hash: cert.hash,
       status: cert.status || "VALID",
       studentId: cert.studentId,
@@ -81,6 +86,7 @@ export default function StudentVault() {
       const qrData = JSON.stringify({
         credentialId: record.id,
         docType: record.docType,
+        institution: record.institution,
         status: record.status || "VALID",
         hash: record.hash,
         studentId: record.studentId,
@@ -96,6 +102,7 @@ export default function StudentVault() {
 
       const instName = (record.institution || "SOLANA TECHNICAL UNIVERSITY").toUpperCase();
 
+      // 1. DEGREE CERTIFICATE
       if (record.docType === "DEGREE CERTIFICATE") {
         const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
         const pageWidth = 297;
@@ -124,20 +131,37 @@ export default function StudentVault() {
         doc.setTextColor(15, 23, 42);
         doc.text(instName, pageWidth / 2, 32, { align: "center" });
 
+        doc.setFont("times", "italic");
+        doc.setFontSize(11);
+        doc.setTextColor(100, 116, 139);
+        doc.text("Upon recommendation of the Academic Senate & Authority of Board of Governors", pageWidth / 2, 42, { align: "center" });
+
+        doc.setFont("times", "normal");
+        doc.setFontSize(13);
+        doc.setTextColor(71, 85, 105);
+        doc.text("hereby confers upon", pageWidth / 2, 54, { align: "center" });
+
         doc.setFont("times", "bolditalic");
         doc.setFontSize(28);
         doc.setTextColor(isRevoked ? 180 : 16, isRevoked ? 28 : 100, isRevoked ? 28 : 70);
         doc.text(record.studentName, pageWidth / 2, 70, { align: "center" });
 
+        doc.setFont("times", "normal");
+        doc.setFontSize(12);
+        doc.setTextColor(71, 85, 105);
+        doc.text(`(Roll / Registration Number: ${record.studentId})`, pageWidth / 2, 78, { align: "center" });
+
+        doc.text("the degree of", pageWidth / 2, 90, { align: "center" });
+
         doc.setFont("times", "bold");
         doc.setFontSize(22);
         doc.setTextColor(15, 23, 42);
-        doc.text(record.degree || "Bachelor of Technology", pageWidth / 2, 104, { align: "center" });
+        doc.text(record.degree || "Bachelor of Technology in Computer Science", pageWidth / 2, 104, { align: "center" });
 
         doc.setFont("times", "normal");
         doc.setFontSize(11);
         doc.setTextColor(51, 65, 85);
-        doc.text(`CGPA: ${record.cgpa || "N/A"} / 10.0`, pageWidth / 2, 114, { align: "center" });
+        doc.text(`with Cumulative Grade Point Average (CGPA) of ${record.cgpa || "N/A"} / 10.0`, pageWidth / 2, 114, { align: "center" });
 
         doc.setDrawColor(226, 232, 240);
         doc.setFillColor(248, 250, 252);
@@ -146,14 +170,16 @@ export default function StudentVault() {
         doc.setFont("courier", "normal");
         doc.setFontSize(7.5);
         doc.setTextColor(100, 116, 139);
-        doc.text(`Credential ID : ${record.id}`, 26, 145);
-        doc.text(`Status        : ${record.status || "VALID"}`, 26, 151);
+        doc.text(`Solana Credential ID : ${record.id}`, 26, 145);
+        doc.text(`Anchor SHA-256 Digest : ${record.hash}`, 26, 151);
+        doc.text(`Ledger Status        : ${record.status || "VALID"}`, 26, 157);
 
         doc.addImage(qrDataUrl, "PNG", pageWidth - 65, 134, 42, 42);
         doc.save(`degree_${record.studentId}${isRevoked ? "_REVOKED" : ""}.pdf`);
         return;
       }
 
+      // 2. OFFICIAL ACADEMIC TRANSCRIPT & MIGRATION CERTIFICATE
       const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
       const pageWidth = 210;
 
@@ -165,7 +191,7 @@ export default function StudentVault() {
       doc.text(instName, pageWidth / 2, 22, { align: "center" });
 
       if (isRevoked) {
-        doc.setFontSize(40);
+        doc.setFontSize(42);
         doc.setTextColor(239, 68, 68);
         doc.text("REVOKED", pageWidth / 2, 140, { align: "center", angle: 45 });
       }
@@ -173,18 +199,19 @@ export default function StudentVault() {
       doc.setTextColor(30, 41, 59);
       doc.setFontSize(11);
       doc.setFont("helvetica", "normal");
-      doc.text(`Document: ${record.docType}`, 20, 50);
-      doc.text(`Student: ${record.studentName}`, 20, 62);
-      doc.text(`ID: ${record.studentId}`, 20, 74);
-      doc.text(`CGPA: ${record.cgpa || "N/A"}`, 20, 86);
-      doc.text(`Status: ${record.status || "VALID"}`, 20, 98);
-      doc.text(`Credential ID: ${record.id}`, 20, 110);
+      doc.text(`Document Type: ${record.docType}`, 20, 50);
+      doc.text(`Student Name: ${record.studentName}`, 20, 62);
+      doc.text(`Registration ID: ${record.studentId}`, 20, 74);
+      doc.text(`Degree / Program: ${record.degree || "Cleared Record"}`, 20, 86);
+      doc.text(`CGPA / Evaluation: ${record.cgpa || "Passed"}`, 20, 98);
+      doc.text(`Issuance Date: ${formattedDate}`, 20, 110);
+      doc.text(`Unique Credential ID: ${record.id}`, 20, 122);
 
       doc.addImage(qrDataUrl, "PNG", 130, 150, 55, 55);
       doc.save(`transcript_${record.studentId}${isRevoked ? "_REVOKED" : ""}.pdf`);
     } catch (err) {
       console.error(err);
-      alert("Failed to download PDF: " + err.message);
+      alert("Failed to compile PDF: " + err.message);
     }
   };
 
@@ -245,7 +272,7 @@ export default function StudentVault() {
           </div>
         </div>
 
-        {/* Complete Academic Breakdown Table */}
+        {/* Complete Academic Breakdown Cards */}
         <div className="space-y-6">
           {studentCerts.map((cert) => {
             const isRevoked = cert.status === "REVOKED";
@@ -259,7 +286,7 @@ export default function StudentVault() {
                     : "border-slate-800 hover:border-slate-700"
                 }`}
               >
-                {/* Header */}
+                {/* Card Header */}
                 <div className="flex flex-wrap items-center justify-between border-b border-slate-800/80 pb-4 mb-5 gap-3">
                   <div className="flex items-center gap-3">
                     <span
@@ -298,7 +325,7 @@ export default function StudentVault() {
                   </div>
                 )}
 
-                {/* All Metadata Cards */}
+                {/* Complete Record Information Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs mb-5">
                   <div className="bg-[#050811] p-3.5 rounded-xl border border-slate-800/80">
                     <p className="text-slate-500 font-semibold mb-0.5">Issuing University</p>
@@ -320,7 +347,7 @@ export default function StudentVault() {
                   </div>
                 </div>
 
-                {/* Subject Grade Breakdown Matrix */}
+                {/* Individual Subject Credits Matrix */}
                 <div className="bg-[#050811] border border-slate-800/80 rounded-xl p-4 mb-5">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300 block mb-3">
                     Course Performance & Academic Credits
@@ -349,7 +376,7 @@ export default function StudentVault() {
                   </div>
                 </div>
 
-                {/* Base58 ID */}
+                {/* Base58 Unique ID Banner */}
                 <div className="p-3 bg-[#050811] rounded-xl border border-slate-800/80 flex flex-col md:flex-row justify-between items-start md:items-center gap-2 mb-5">
                   <div className="flex-1 min-w-0">
                     <span className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">
@@ -369,7 +396,7 @@ export default function StudentVault() {
                   </button>
                 </div>
 
-                {/* Action Bar (Selective Share, QR, and PDF download only here) */}
+                {/* Exclusive Student Actions (QR, Selective Share, Download PDF) */}
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-800/80">
                   <div className="flex items-center gap-2">
                     <button
@@ -394,10 +421,13 @@ export default function StudentVault() {
                   <button
                     type="button"
                     onClick={() => downloadOfficialPDF(cert)}
-                    className={`px-5 py-2.5 text-white rounded-xl text-xs font-bold transition shadow-lg cursor-pointer ${
+                    className={`px-5 py-2.5 text-white rounded-xl text-xs font-bold transition shadow-lg cursor-pointer flex items-center gap-2 ${
                       isRevoked ? "bg-red-700 hover:bg-red-800" : "bg-emerald-600 hover:bg-emerald-700"
                     }`}
                   >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
                     {isRevoked ? "Download (Revoked Copy)" : "Download Official PDF"}
                   </button>
                 </div>
@@ -428,7 +458,7 @@ export default function StudentVault() {
                 </button>
               </div>
 
-              {/* Checkboxes */}
+              {/* Claims Checkboxes */}
               <div>
                 <p className="text-[11px] uppercase font-bold text-purple-400 tracking-wider mb-2">
                   Step 1: Select Information Claims to Disclose
@@ -496,7 +526,7 @@ export default function StudentVault() {
                 </div>
               </div>
 
-              {/* Time Selector */}
+              {/* Time Duration Dropdown */}
               <div>
                 <p className="text-[11px] uppercase font-bold text-purple-400 tracking-wider mb-2">
                   Step 2: Choose Sharing Access Duration
@@ -549,7 +579,7 @@ export default function StudentVault() {
           </div>
         )}
 
-        {/* QR MODAL */}
+        {/* QR CODE POPUP */}
         {activeQrModal && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-[#0c1322] border border-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl text-center relative">
