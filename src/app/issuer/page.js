@@ -18,6 +18,7 @@ export default function IssuerPortal() {
   const { connected, publicKey } = wallet;
 
   const [formData, setFormData] = useState({
+    institution: "Solana Technical University",
     docType: "OFFICIAL ACADEMIC TRANSCRIPT",
     studentName: "Alex Morgan",
     studentId: "CS-2026-8841",
@@ -37,12 +38,16 @@ export default function IssuerPortal() {
   useEffect(() => {
     setMounted(true);
     setIssuedHistory(getAllCertificates());
-  }, []);
+    if (user?.institution) {
+      setFormData((prev) => ({ ...prev, institution: user.institution }));
+    }
+  }, [user]);
 
   const generatePDF = async (record) => {
     const qrData = JSON.stringify({
       credentialId: record.id,
       docType: record.docType,
+      institution: record.institution,
       hash: record.hash,
       studentId: record.studentId,
       studentKey: record.studentKey,
@@ -55,7 +60,9 @@ export default function IssuerPortal() {
       day: "numeric",
     });
 
-    // 1. DEGREE CERTIFICATE (Landscape Ornate Design)
+    const instName = (record.institution || "SOLANA TECHNICAL UNIVERSITY").toUpperCase();
+
+    // 1. DEGREE CERTIFICATE (Dynamic University Name)
     if (record.docType === "DEGREE CERTIFICATE") {
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
       const pageWidth = 297;
@@ -81,12 +88,7 @@ export default function IssuerPortal() {
       doc.setFont("times", "bold");
       doc.setFontSize(24);
       doc.setTextColor(15, 23, 42);
-      doc.text(
-        record.institution ? record.institution.toUpperCase() : "SOLANA TECHNICAL UNIVERSITY",
-        pageWidth / 2,
-        32,
-        { align: "center" }
-      );
+      doc.text(instName, pageWidth / 2, 32, { align: "center" });
 
       doc.setFont("times", "italic");
       doc.setFontSize(11);
@@ -159,7 +161,7 @@ export default function IssuerPortal() {
       return;
     }
 
-    // 2. MIGRATION CERTIFICATE (Formal Institutional Letterhead)
+    // 2. MIGRATION CERTIFICATE (Dynamic University Letterhead)
     if (record.docType === "MIGRATION CERTIFICATE") {
       const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
       const pageWidth = 210;
@@ -170,12 +172,7 @@ export default function IssuerPortal() {
       doc.setFont("times", "bold");
       doc.setFontSize(18);
       doc.setTextColor(255, 255, 255);
-      doc.text(
-        record.institution ? record.institution.toUpperCase() : "SOLANA TECHNICAL UNIVERSITY",
-        pageWidth / 2,
-        18,
-        { align: "center" }
-      );
+      doc.text(instName, pageWidth / 2, 18, { align: "center" });
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
@@ -203,7 +200,7 @@ export default function IssuerPortal() {
       doc.setFontSize(12);
       doc.setTextColor(30, 41, 59);
 
-      const introText = `This is to certify that ${record.studentName}, student registered under Roll / ID No. ${record.studentId}, was a bona fide student of this University.`;
+      const introText = `This is to certify that ${record.studentName}, student registered under Roll / ID No. ${record.studentId}, was a bona fide student of ${instName}.`;
       const splitIntro = doc.splitTextToSize(introText, pageWidth - 36);
       doc.text(splitIntro, 18, 90);
 
@@ -267,7 +264,7 @@ export default function IssuerPortal() {
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
-    doc.text("OFFICIAL ACADEMIC TRANSCRIPT", pageWidth / 2, 22, { align: "center" });
+    doc.text(instName, pageWidth / 2, 22, { align: "center" });
 
     doc.setTextColor(30, 41, 59);
     doc.setFontSize(11);
@@ -317,7 +314,7 @@ export default function IssuerPortal() {
       const credentialId = uniqueCredKeypair.publicKey.toBase58();
 
       const now = Math.floor(Date.now() / 1000);
-      const rawPayload = `${formData.docType}|${formData.studentName}|${formData.studentId}|${formData.degree}|${formData.cgpa}|${formData.studentKey}|${credentialId}|${now}`;
+      const rawPayload = `${formData.institution}|${formData.docType}|${formData.studentName}|${formData.studentId}|${formData.degree}|${formData.cgpa}|${formData.studentKey}|${credentialId}|${now}`;
       const msgBuffer = new TextEncoder().encode(rawPayload);
       const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
       const hashArray = Array.from(new Uint8Array(hashBuffer));
@@ -361,6 +358,7 @@ export default function IssuerPortal() {
         id: credentialId,
         hash: hashHex,
         docType: formData.docType,
+        institution: formData.institution.trim(),
         studentName: formData.studentName,
         studentId: formData.studentId,
         studentEmail: formData.studentEmail.trim(),
@@ -368,7 +366,6 @@ export default function IssuerPortal() {
         cgpa: formData.cgpa,
         studentKey: formData.studentKey,
         issuerAuthority: publicKey.toBase58(),
-        institution: user?.institution || "Solana Technical University",
         timestamp: now,
       };
 
@@ -427,7 +424,7 @@ export default function IssuerPortal() {
           <div>
             <h1 className="text-2xl font-bold text-white">Issuer Portal</h1>
             <p className="text-xs text-purple-400 font-medium mt-0.5">
-              {user.institution || "Authorized University"} ({user.name})
+              Logged in: {user.institution || formData.institution} ({user.name})
             </p>
           </div>
           <div className="min-w-[140px] flex justify-end">
@@ -436,6 +433,19 @@ export default function IssuerPortal() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs text-gray-400 mb-1 font-semibold uppercase tracking-wider">
+              Issuing University / Institution Name
+            </label>
+            <input
+              type="text"
+              value={formData.institution}
+              onChange={(e) => setFormData({ ...formData, institution: e.target.value })}
+              className="w-full bg-[#0a0f1d] border border-gray-700 rounded-lg px-4 py-2 text-sm text-white font-semibold focus:outline-none focus:border-purple-500"
+              required
+            />
+          </div>
+
           <div>
             <label className="block text-xs text-gray-400 mb-1 font-semibold uppercase tracking-wider">
               Document Type
@@ -599,6 +609,7 @@ export default function IssuerPortal() {
             <table className="w-full text-left text-xs">
               <thead className="border-b border-slate-800 text-slate-400 bg-slate-900/50">
                 <tr>
+                  <th className="p-3">Institution</th>
                   <th className="p-3">Student Name</th>
                   <th className="p-3">Login Email</th>
                   <th className="p-3">Document Type</th>
@@ -610,9 +621,10 @@ export default function IssuerPortal() {
               <tbody className="divide-y divide-slate-800/60 text-slate-200">
                 {issuedHistory.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-800/30 transition">
+                    <td className="p-3 font-semibold text-purple-300">{item.institution || "Solana Tech Univ"}</td>
                     <td className="p-3 font-semibold text-white">{item.studentName}</td>
                     <td className="p-3 text-emerald-400 font-mono">{item.studentEmail || item.studentId}</td>
-                    <td className="p-3 text-purple-300">{item.docType}</td>
+                    <td className="p-3 text-slate-300">{item.docType}</td>
                     <td className="p-3 font-mono text-[11px] text-slate-400">{item.id.slice(0, 8)}...{item.id.slice(-6)}</td>
                     <td className="p-3 text-slate-400">{new Date(item.timestamp * 1000).toLocaleDateString()}</td>
                     <td className="p-3 text-right">

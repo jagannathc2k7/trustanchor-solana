@@ -5,13 +5,29 @@ import { useRouter } from "next/navigation";
 
 const AuthContext = createContext();
 
-const ADMIN_USER = {
-  username: "admin@university.edu",
-  password: "password123",
-  role: "university",
-  name: "Registrar Office",
-  institution: "Solana Technical University",
-};
+const UNIVERSITY_USERS = [
+  {
+    username: "admin@stanford.edu",
+    password: "password123",
+    role: "university",
+    name: "Registrar Office",
+    institution: "Stanford Institute of Technology",
+  },
+  {
+    username: "admin@mit.edu",
+    password: "password123",
+    role: "university",
+    name: "Office of Academic Records",
+    institution: "Massachusetts Academy of Science",
+  },
+  {
+    username: "admin@university.edu",
+    password: "password123",
+    role: "university",
+    name: "Registrar Office",
+    institution: "Solana Technical University",
+  },
+];
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -54,13 +70,38 @@ export function AuthProvider({ children }) {
     const cleanUser = username.toLowerCase().trim();
 
     if (selectedRole === "university") {
-      if (cleanUser === ADMIN_USER.username.toLowerCase() && password === ADMIN_USER.password) {
-        setUser(ADMIN_USER);
-        localStorage.setItem("trustanchor_auth_user", JSON.stringify(ADMIN_USER));
+      const foundUniv = UNIVERSITY_USERS.find(
+        (u) => u.username.toLowerCase() === cleanUser && u.password === password
+      );
+
+      if (foundUniv) {
+        setUser(foundUniv);
+        localStorage.setItem("trustanchor_auth_user", JSON.stringify(foundUniv));
         router.push("/issuer");
         return { success: true };
       }
-      return { success: false, error: "Invalid university admin credentials" };
+
+      // Default fallback for any university email
+      if (cleanUser.includes("@")) {
+        const dynamicUnivName = cleanUser
+          .split("@")[1]
+          .split(".")[0]
+          .toUpperCase() + " UNIVERSITY";
+
+        const dynamicUniv = {
+          username: cleanUser,
+          password,
+          role: "university",
+          name: "Registrar Office",
+          institution: dynamicUnivName,
+        };
+        setUser(dynamicUniv);
+        localStorage.setItem("trustanchor_auth_user", JSON.stringify(dynamicUniv));
+        router.push("/issuer");
+        return { success: true };
+      }
+
+      return { success: false, error: "Invalid university credentials" };
     }
 
     if (selectedRole === "student") {
