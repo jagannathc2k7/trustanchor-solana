@@ -1,0 +1,21 @@
+[toolchain]
+
+[features]
+seeds = true
+skip-lint = false
+
+[programs.localnet]
+academic_credentials = "8Jd8vX4x9TqE8V9ZkL7w5U2a1mF4bC6dE8gH0jK2mN4p"
+
+[programs.devnet]
+academic_credentials = "8Jd8vX4x9TqE8V9ZkL7w5U2a1mF4bC6dE8gH0jK2mN4p"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "devnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

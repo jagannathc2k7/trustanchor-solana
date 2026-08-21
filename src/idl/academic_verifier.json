@@ -1,0 +1,33 @@
+{
+  "version": "0.1.0",
+  "name": "academic_verifier",
+  "instructions": [
+    {
+      "name": "issueCertificate",
+      "accounts": [
+        { "name": "certificate", "isMut": true, "isSigner": false },
+        { "name": "authority", "isMut": true, "isSigner": true },
+        { "name": "systemProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": [
+        { "name": "docHash", "type": { "array": ["u8", 32] } },
+        { "name": "studentKey", "type": "publicKey" },
+        { "name": "issueDate", "type": "i64" }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "CertificateRecord",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "docHash", "type": { "array": ["u8", 32] } },
+          { "name": "studentKey", "type": "publicKey" },
+          { "name": "issueDate", "type": "i64" },
+          { "name": "authority", "type": "publicKey" }
+        ]
+      }
+    }
+  ]
+}
