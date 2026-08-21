@@ -18,6 +18,20 @@ export function saveCertificate(certRecord) {
   return updated;
 }
 
+export function updateCertificateRecord(id, updatedFields) {
+  const all = getAllCertificates();
+  const updated = all.map((c) => (c.id === id ? { ...c, ...updatedFields } : c));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  return updated;
+}
+
+export function deleteCertificateRecord(id) {
+  const all = getAllCertificates();
+  const updated = all.filter((c) => c.id !== id);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  return updated;
+}
+
 export function updateCertificateStatus(id, newStatus, reason = "") {
   const all = getAllCertificates();
   const updated = all.map((c) => {

@@ -7,7 +7,13 @@ import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { PublicKey, SystemProgram, Keypair } from "@solana/web3.js";
 import { BN, getProvider, getProgram, PROGRAM_ID } from "../../lib/solana";
 import { useAuth } from "../../context/AuthContext";
-import { saveCertificate, getAllCertificates, updateCertificateStatus } from "../../lib/certificateStore";
+import {
+  saveCertificate,
+  getAllCertificates,
+  updateCertificateStatus,
+  updateCertificateRecord,
+  deleteCertificateRecord,
+} from "../../lib/certificateStore";
 import { sendIssuanceEmail } from "../../lib/emailService";
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
@@ -35,6 +41,10 @@ export default function IssuerPortal() {
   const [status, setStatus] = useState("");
   const [createdStudentNotice, setCreatedStudentNotice] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
+
+  // Edit / Inspect Modal States
+  const [editingRecord, setEditingRecord] = useState(null);
+  const [inspectingRecord, setInspectingRecord] = useState(null);
 
   useEffect(() => {
     setMounted(true);
@@ -85,32 +95,10 @@ export default function IssuerPortal() {
       doc.setTextColor(15, 23, 42);
       doc.text(instName, pageWidth / 2, 32, { align: "center" });
 
-      doc.setFont("times", "italic");
-      doc.setFontSize(11);
-      doc.setTextColor(100, 116, 139);
-      doc.text(
-        "Upon the recommendation of the Academic Council and by the authority of the Board of Governors",
-        pageWidth / 2,
-        42,
-        { align: "center" }
-      );
-
-      doc.setFont("times", "normal");
-      doc.setFontSize(13);
-      doc.setTextColor(71, 85, 105);
-      doc.text("hereby confers upon", pageWidth / 2, 54, { align: "center" });
-
       doc.setFont("times", "bolditalic");
       doc.setFontSize(28);
       doc.setTextColor(16, 100, 70);
       doc.text(record.studentName, pageWidth / 2, 70, { align: "center" });
-
-      doc.setFont("times", "normal");
-      doc.setFontSize(12);
-      doc.setTextColor(71, 85, 105);
-      doc.text(`(Registration No: ${record.studentId})`, pageWidth / 2, 78, { align: "center" });
-
-      doc.text("the degree of", pageWidth / 2, 90, { align: "center" });
 
       doc.setFont("times", "bold");
       doc.setFontSize(22);
@@ -120,54 +108,10 @@ export default function IssuerPortal() {
       doc.setFont("times", "normal");
       doc.setFontSize(11);
       doc.setTextColor(51, 65, 85);
-      doc.text(`with Cumulative Grade Point Average (CGPA) of ${record.cgpa} / 10.0`, pageWidth / 2, 114, { align: "center" });
-
-      doc.setDrawColor(226, 232, 240);
-      doc.setFillColor(248, 250, 252);
-      doc.roundedRect(22, 138, 175, 24, 2, 2, "FD");
-
-      doc.setFont("courier", "normal");
-      doc.setFontSize(7.5);
-      doc.setTextColor(100, 116, 139);
-      doc.text(`Unique Credential ID : ${record.id}`, 26, 145);
-      doc.text(`SHA-256 Digest       : ${record.hash}`, 26, 151);
-
-      doc.setFont("times", "normal");
-      doc.setFontSize(10);
-      doc.setTextColor(30, 41, 59);
-      doc.line(30, 185, 85, 185);
-      doc.text("Registrar of the University", 57.5, 191, { align: "center" });
-      doc.line(pageWidth - 145, 185, pageWidth - 90, 185);
-      doc.text("Dean / President", pageWidth - 117.5, 191, { align: "center" });
+      doc.text(`CGPA: ${record.cgpa} / 10.0`, pageWidth / 2, 114, { align: "center" });
 
       doc.addImage(qrDataUrl, "PNG", pageWidth - 65, 134, 42, 42);
-      doc.save(`degree_certificate_${record.studentId}.pdf`);
-      return;
-    }
-
-    if (record.docType === "MIGRATION CERTIFICATE") {
-      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      const pageWidth = 210;
-
-      doc.setFillColor(15, 23, 42);
-      doc.rect(0, 0, pageWidth, 35, "F");
-
-      doc.setFont("times", "bold");
-      doc.setFontSize(18);
-      doc.setTextColor(255, 255, 255);
-      doc.text(instName, pageWidth / 2, 18, { align: "center" });
-
-      doc.setFont("times", "bold");
-      doc.setFontSize(18);
-      doc.setTextColor(15, 23, 42);
-      doc.text("MIGRATION CERTIFICATE", pageWidth / 2, 72, { align: "center" });
-
-      const introText = `This is to certify that ${record.studentName} (ID: ${record.studentId}) was a bona fide student of ${instName} and is cleared for transfer.`;
-      const splitIntro = doc.splitTextToSize(introText, pageWidth - 36);
-      doc.text(splitIntro, 18, 90);
-
-      doc.addImage(qrDataUrl, "PNG", pageWidth - 62, 148, 36, 36);
-      doc.save(`migration_certificate_${record.studentId}.pdf`);
+      doc.save(`degree_${record.studentId}.pdf`);
       return;
     }
 
@@ -184,15 +128,31 @@ export default function IssuerPortal() {
     doc.setTextColor(30, 41, 59);
     doc.setFontSize(11);
     doc.setFont("helvetica", "normal");
-    doc.text(`Document Type: ${record.docType}`, 20, 50);
-    doc.text(`Student Name: ${record.studentName}`, 20, 62);
-    doc.text(`Registration ID: ${record.studentId}`, 20, 74);
-    doc.text(`Degree Program: ${record.degree}`, 20, 86);
-    doc.text(`CGPA / Grade: ${record.cgpa}`, 20, 98);
-    doc.text(`Unique Credential ID: ${record.id}`, 20, 134);
+    doc.text(`Document: ${record.docType}`, 20, 50);
+    doc.text(`Student: ${record.studentName}`, 20, 62);
+    doc.text(`ID: ${record.studentId}`, 20, 74);
+    doc.text(`CGPA / Status: ${record.cgpa || "Cleared"}`, 20, 86);
+    doc.text(`Credential ID: ${record.id}`, 20, 98);
 
-    doc.addImage(qrDataUrl, "PNG", 130, 170, 55, 55);
-    doc.save(`transcript_${record.studentId}.pdf`);
+    doc.addImage(qrDataUrl, "PNG", 130, 150, 55, 55);
+    doc.save(`cert_${record.studentId}.pdf`);
+  };
+
+  const handleSaveEdit = (e) => {
+    e.preventDefault();
+    if (!editingRecord) return;
+
+    const updated = updateCertificateRecord(editingRecord.id, editingRecord);
+    setIssuedHistory(updated);
+    setEditingRecord(null);
+    alert("Record updated successfully in the ledger database.");
+  };
+
+  const handleDelete = (id, name) => {
+    if (window.confirm(`Delete record for ${name}? This will remove it from the local registry.`)) {
+      const updated = deleteCertificateRecord(id);
+      setIssuedHistory(updated);
+    }
   };
 
   const handleRevoke = (certId, studentName) => {
@@ -204,30 +164,7 @@ export default function IssuerPortal() {
     if (reason !== null) {
       const updated = updateCertificateStatus(certId, "REVOKED", reason);
       setIssuedHistory(updated);
-      alert(`Certificate ${certId.slice(0, 8)}... has been flagged as REVOKED.`);
     }
-  };
-
-  const handleReissueSetup = (record) => {
-    setFormData({
-      institution: record.institution || user?.institution || "Solana Technical University",
-      docType: record.docType,
-      studentName: record.studentName,
-      studentId: record.studentId,
-      studentEmail: record.studentEmail || `${record.studentId.toLowerCase()}@student.edu`,
-      studentPassword: "password123",
-      degree: record.degree || "",
-      cgpa: record.cgpa || "",
-      studentKey: record.studentKey || "",
-    });
-
-    if (record.status !== "REVOKED") {
-      updateCertificateStatus(record.id, "REVOKED", "Superseded by re-issuance");
-    }
-
-    setIssuedHistory(getAllCertificates());
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    setStatus(`Loaded details for ${record.studentName}. Prior credential will be marked superseded.`);
   };
 
   const handleSubmit = async (e) => {
@@ -285,7 +222,6 @@ export default function IssuerPortal() {
         }
       }
 
-      // Register student credentials
       registerStudentAccount({
         username: formData.studentEmail.trim(),
         password: formData.studentPassword,
@@ -314,12 +250,9 @@ export default function IssuerPortal() {
       const updated = saveCertificate(certRecord);
       setIssuedHistory(updated);
 
-      setStatus("Generating official PDF certificate...");
       await generatePDF(certRecord);
 
-      // Dispatch Email Notification
-      setStatus(`Sending official credential confirmation email to ${formData.studentEmail}...`);
-      const emailResult = await sendIssuanceEmail({
+      await sendIssuanceEmail({
         studentName: formData.studentName,
         studentEmail: formData.studentEmail.trim(),
         docType: formData.docType,
@@ -329,14 +262,7 @@ export default function IssuerPortal() {
         adminEmail: user?.username || "admin@university.edu",
       });
 
-      setCreatedStudentNotice({
-        email: formData.studentEmail.trim(),
-        password: formData.studentPassword,
-        id: credentialId,
-        emailResult,
-      });
-
-      setStatus(`Certificate issued & confirmed. Email dispatched to ${formData.studentEmail}!`);
+      setStatus(`Certificate issued & record stored successfully!`);
     } catch (err) {
       console.error(err);
       setErrorMsg(err.message || "Transaction failed");
@@ -359,7 +285,7 @@ export default function IssuerPortal() {
         <div className="p-8 bg-[#0c1322] border border-slate-800 rounded-2xl max-w-md w-full shadow-2xl">
           <h2 className="text-xl font-bold text-white mb-2">Restricted Access</h2>
           <p className="text-xs text-slate-400 mb-6 leading-relaxed">
-            The Issuer Portal is reserved for authorized University Registrar accounts.
+            The Issuer Portal is reserved for authorized University accounts.
           </p>
           <Link
             href="/login"
@@ -373,7 +299,8 @@ export default function IssuerPortal() {
   }
 
   return (
-    <div className="min-h-screen bg-[#050811] text-white flex flex-col items-center pt-8 px-4 pb-16">
+    <div className="min-h-screen bg-[#050811] text-white flex flex-col items-center pt-8 px-4 pb-20">
+      {/* Issuance Form */}
       <div className="w-full max-w-2xl bg-[#0f172a] border border-gray-800 rounded-2xl p-8 shadow-2xl mb-12">
         <div className="flex justify-between items-center mb-6">
           <div>
@@ -441,7 +368,7 @@ export default function IssuerPortal() {
 
           <div className="p-4 bg-[#0a0f1d] border border-purple-900/50 rounded-xl space-y-3">
             <p className="text-xs font-semibold text-purple-300 uppercase tracking-wider">
-              Student Vault Login Credentials (Will be Emailed)
+              Student Vault Login Credentials
             </p>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -515,28 +442,6 @@ export default function IssuerPortal() {
             </div>
           )}
 
-          {createdStudentNotice && (
-            <div className="p-3.5 bg-purple-950/60 border border-purple-700 text-purple-200 text-xs rounded-lg space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                <p className="font-semibold text-emerald-400">Confirmation Sent to Student</p>
-              </div>
-              <p>Email Sent To: <span className="font-mono text-white">{createdStudentNotice.email}</span></p>
-              <p>Assigned Password: <span className="font-mono text-white">{createdStudentNotice.password}</span></p>
-              
-              {createdStudentNotice.emailResult?.mailtoLink && (
-                <a
-                  href={createdStudentNotice.emailResult.mailtoLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-block mt-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded text-[11px] font-semibold transition"
-                >
-                  Open in Email Client to Review
-                </a>
-              )}
-            </div>
-          )}
-
           <div className="pt-4">
             {!connected ? (
               <div className="flex justify-center">
@@ -557,14 +462,15 @@ export default function IssuerPortal() {
         </form>
       </div>
 
+      {/* University Issuance Registry with Full View/Edit Database Actions */}
       <div className="w-full max-w-5xl bg-[#0c1322] border border-slate-800 rounded-2xl p-6 shadow-2xl">
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h2 className="text-lg font-bold text-white">University Issuance Database</h2>
-            <p className="text-xs text-slate-400">Manage, Revoke, or Reissue official student credentials</p>
+            <h2 className="text-lg font-bold text-white">Live Ledger Database Registry</h2>
+            <p className="text-xs text-slate-400">View, inspect raw JSON, update fields, or revoke active credentials</p>
           </div>
           <span className="bg-purple-950/60 border border-purple-800 text-purple-300 font-bold px-3.5 py-1 rounded-full text-xs">
-            {issuedHistory.length} Total Records
+            {issuedHistory.length} Database Rows
           </span>
         </div>
 
@@ -578,11 +484,11 @@ export default function IssuerPortal() {
               <thead className="border-b border-slate-800 text-slate-400 bg-slate-900/50">
                 <tr>
                   <th className="p-3">Status</th>
+                  <th className="p-3">Institution</th>
                   <th className="p-3">Student Details</th>
                   <th className="p-3">Document Type</th>
                   <th className="p-3">Credential ID</th>
-                  <th className="p-3">Date</th>
-                  <th className="p-3 text-right">Actions</th>
+                  <th className="p-3 text-right">Database Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-slate-200">
@@ -599,38 +505,53 @@ export default function IssuerPortal() {
                         </span>
                       )}
                     </td>
+                    <td className="p-3 font-semibold text-purple-300 max-w-[140px] truncate">{item.institution}</td>
                     <td className="p-3 font-semibold text-white">
                       {item.studentName}
                       <span className="block text-[10px] text-emerald-400 font-mono">{item.studentEmail}</span>
                     </td>
-                    <td className="p-3 text-purple-300">{item.docType}</td>
+                    <td className="p-3 text-slate-300">{item.docType}</td>
                     <td className="p-3 font-mono text-[11px] text-slate-400">
                       {item.id.slice(0, 8)}...{item.id.slice(-6)}
                     </td>
-                    <td className="p-3 text-slate-400">{new Date(item.timestamp * 1000).toLocaleDateString()}</td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
-                          onClick={() => generatePDF(item)}
+                          onClick={() => setInspectingRecord(item)}
                           className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded text-[11px] font-semibold transition"
+                          title="View Full JSON Record"
+                        >
+                          View
+                        </button>
+                        <button
+                          onClick={() => setEditingRecord({ ...item })}
+                          className="bg-blue-950/60 hover:bg-blue-900 border border-blue-800 text-blue-300 px-2 py-1 rounded text-[11px] font-semibold transition"
+                          title="Edit Database Row"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => generatePDF(item)}
+                          className="bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 px-2 py-1 rounded text-[11px] font-semibold transition"
                           title="Download PDF"
                         >
                           PDF
                         </button>
-                        <button
-                          onClick={() => handleReissueSetup(item)}
-                          className="bg-purple-900/60 hover:bg-purple-800 border border-purple-700 text-purple-200 px-2 py-1 rounded text-[11px] font-semibold transition"
-                          title="Reissue Credential"
-                        >
-                          Reissue
-                        </button>
-                        {item.status !== "REVOKED" && (
+                        {item.status !== "REVOKED" ? (
                           <button
                             onClick={() => handleRevoke(item.id, item.studentName)}
                             className="bg-red-950/60 hover:bg-red-900 border border-red-800 text-red-300 px-2 py-1 rounded text-[11px] font-semibold transition"
                             title="Revoke Certificate"
                           >
                             Revoke
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleDelete(item.id, item.studentName)}
+                            className="bg-red-950/40 hover:bg-red-900 text-red-400 px-2 py-1 rounded text-[11px] font-semibold transition"
+                            title="Delete Record"
+                          >
+                            Delete
                           </button>
                         )}
                       </div>
@@ -642,6 +563,107 @@ export default function IssuerPortal() {
           </div>
         )}
       </div>
+
+      {/* EDIT MODAL */}
+      {editingRecord && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0c1322] border border-slate-800 rounded-2xl p-6 max-w-lg w-full shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-4">Edit Ledger Record</h3>
+            <form onSubmit={handleSaveEdit} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-400 mb-1">Student Name</label>
+                <input
+                  type="text"
+                  value={editingRecord.studentName}
+                  onChange={(e) => setEditingRecord({ ...editingRecord, studentName: e.target.value })}
+                  className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2 text-white"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 mb-1">Institution</label>
+                <input
+                  type="text"
+                  value={editingRecord.institution}
+                  onChange={(e) => setEditingRecord({ ...editingRecord, institution: e.target.value })}
+                  className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2 text-white"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-slate-400 mb-1">Degree Program</label>
+                  <input
+                    type="text"
+                    value={editingRecord.degree || ""}
+                    onChange={(e) => setEditingRecord({ ...editingRecord, degree: e.target.value })}
+                    className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2 text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1">CGPA / Grade</label>
+                  <input
+                    type="text"
+                    value={editingRecord.cgpa || ""}
+                    onChange={(e) => setEditingRecord({ ...editingRecord, cgpa: e.target.value })}
+                    className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2 text-white"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-slate-400 mb-1">Status</label>
+                <select
+                  value={editingRecord.status || "VALID"}
+                  onChange={(e) => setEditingRecord({ ...editingRecord, status: e.target.value })}
+                  className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2 text-white"
+                >
+                  <option value="VALID">VALID (Active)</option>
+                  <option value="REVOKED">REVOKED</option>
+                </select>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setEditingRecord(null)}
+                  className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* INSPECT RAW RECORD MODAL */}
+      {inspectingRecord && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0c1322] border border-slate-800 rounded-2xl p-6 max-w-xl w-full shadow-2xl">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-sm font-bold text-white">Database Row Inspector</h3>
+              <button onClick={() => setInspectingRecord(null)} className="text-slate-400 hover:text-white">✕</button>
+            </div>
+            <pre className="bg-[#050811] p-4 rounded-xl border border-slate-800 text-[11px] text-emerald-400 font-mono overflow-auto max-h-80">
+              {JSON.stringify(inspectingRecord, null, 2)}
+            </pre>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setInspectingRecord(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold"
+              >
+                Close Inspector
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
