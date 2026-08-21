@@ -40,6 +40,7 @@ export default function VerifierPage() {
 
     const record = findCertificateByIdOrHash(searchId);
     if (record) {
+      const isRevoked = record.status === "REVOKED";
       setResult({
         docType: record.docType,
         studentName: record.studentName,
@@ -49,7 +50,9 @@ export default function VerifierPage() {
         studentKey: record.studentKey,
         credentialId: record.id,
         hash: record.hash,
-        verified: true,
+        status: record.status || "VALID",
+        revocationReason: record.revocationReason,
+        verified: !isRevoked,
         institution: record.institution || "Solana Technical University",
         verifiedAt: new Date(record.timestamp * 1000).toLocaleDateString(),
       });
@@ -102,6 +105,9 @@ export default function VerifierPage() {
       const credentialId = idMatch ? cleanPdfText(idMatch[1]) : "Solana-PDA-Record";
       const embeddedHash = hashMatch ? cleanPdfText(hashMatch[1]) : calculatedHash;
 
+      const record = findCertificateByIdOrHash(credentialId) || findCertificateByIdOrHash(embeddedHash);
+      const isRevoked = record?.status === "REVOKED";
+
       setResult({
         docType,
         studentName,
@@ -112,8 +118,10 @@ export default function VerifierPage() {
         credentialId,
         hash: embeddedHash,
         fileHash: calculatedHash,
-        verified: Boolean(nameMatch || hashMatch),
-        institution: "Solana Technical University",
+        status: isRevoked ? "REVOKED" : "VALID",
+        revocationReason: record?.revocationReason,
+        verified: Boolean((nameMatch || hashMatch) && !isRevoked),
+        institution: record?.institution || "Solana Technical University",
         verifiedAt: new Date().toLocaleDateString(),
       });
     } catch (err) {
@@ -235,22 +243,47 @@ export default function VerifierPage() {
       )}
 
       {result && (
-        <div className="mt-8 w-full bg-[#0c1322] border border-slate-800 rounded-2xl p-6 shadow-2xl">
+        <div
+          className={`mt-8 w-full bg-[#0c1322] border rounded-2xl p-6 shadow-2xl ${
+            result.status === "REVOKED" ? "border-red-700" : "border-slate-800"
+          }`}
+        >
           <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
             <div className="flex items-center gap-3">
               <span
                 className={`h-3 w-3 rounded-full ${
-                  result.verified ? "bg-emerald-400" : "bg-red-400"
+                  result.status === "REVOKED"
+                    ? "bg-red-500"
+                    : result.verified
+                    ? "bg-emerald-400"
+                    : "bg-amber-400"
                 }`}
               />
               <span className="font-bold text-lg text-white">
-                {result.verified ? `Authentic ${result.docType}` : "Unverified Document"}
+                {result.status === "REVOKED"
+                  ? `Revoked Credential (${result.docType})`
+                  : result.verified
+                  ? `Authentic ${result.docType}`
+                  : "Unverified Document"}
               </span>
             </div>
-            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              SOLANA ANCHORED
+            <span
+              className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                result.status === "REVOKED"
+                  ? "bg-red-900/40 text-red-300 border border-red-700"
+                  : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+              }`}
+            >
+              {result.status === "REVOKED" ? "REVOKED ON-CHAIN" : "SOLANA ANCHORED"}
             </span>
           </div>
+
+          {result.status === "REVOKED" && (
+            <div className="mb-5 p-3.5 bg-red-950/50 border border-red-800 rounded-xl text-xs text-red-200">
+              <span className="font-bold block text-red-300">Issuing Authority Revocation Notice:</span>
+              {result.revocationReason || "This credential has been flagged as revoked/invalidated by the university registrar."}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
             <div>

@@ -7,7 +7,7 @@ import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { PublicKey, SystemProgram, Keypair } from "@solana/web3.js";
 import { BN, getProvider, getProgram, PROGRAM_ID } from "../../lib/solana";
 import { useAuth } from "../../context/AuthContext";
-import { saveCertificate, getAllCertificates } from "../../lib/certificateStore";
+import { saveCertificate, getAllCertificates, updateCertificateStatus } from "../../lib/certificateStore";
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
 
@@ -51,6 +51,7 @@ export default function IssuerPortal() {
       hash: record.hash,
       studentId: record.studentId,
       studentKey: record.studentKey,
+      status: record.status || "VALID",
       timestamp: record.timestamp,
     });
     const qrDataUrl = await QRCode.toDataURL(qrData, { margin: 1 });
@@ -62,7 +63,6 @@ export default function IssuerPortal() {
 
     const instName = (record.institution || "SOLANA TECHNICAL UNIVERSITY").toUpperCase();
 
-    // 1. DEGREE CERTIFICATE (Dynamic University Name)
     if (record.docType === "DEGREE CERTIFICATE") {
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
       const pageWidth = 297;
@@ -161,7 +161,6 @@ export default function IssuerPortal() {
       return;
     }
 
-    // 2. MIGRATION CERTIFICATE (Dynamic University Letterhead)
     if (record.docType === "MIGRATION CERTIFICATE") {
       const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
       const pageWidth = 210;
@@ -255,7 +254,6 @@ export default function IssuerPortal() {
       return;
     }
 
-    // 3. OFFICIAL ACADEMIC TRANSCRIPT
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const pageWidth = 210;
 
@@ -288,6 +286,41 @@ export default function IssuerPortal() {
 
     const filenamePrefix = record.docType.toLowerCase().replace(/\s+/g, "_");
     doc.save(`${filenamePrefix}_${record.studentId}.pdf`);
+  };
+
+  const handleRevoke = (certId, studentName) => {
+    const reason = window.prompt(
+      `Confirm Revocation of Certificate for ${studentName}?\nEnter reason for revocation (e.g. Academic Re-evaluation, Disciplinary, Incorrect Grade):`,
+      "Academic Correction & Grade Update"
+    );
+
+    if (reason !== null) {
+      const updated = updateCertificateStatus(certId, "REVOKED", reason);
+      setIssuedHistory(updated);
+      alert(`Certificate ${certId.slice(0, 8)}... has been flagged as REVOKED on the registry.`);
+    }
+  };
+
+  const handleReissueSetup = (record) => {
+    setFormData({
+      institution: record.institution || user?.institution || "Solana Technical University",
+      docType: record.docType,
+      studentName: record.studentName,
+      studentId: record.studentId,
+      studentEmail: record.studentEmail || `${record.studentId.toLowerCase()}@student.edu`,
+      studentPassword: "password123",
+      degree: record.degree || "",
+      cgpa: record.cgpa || "",
+      studentKey: record.studentKey || "",
+    });
+
+    if (record.status !== "REVOKED") {
+      updateCertificateStatus(record.id, "REVOKED", "Superseded by re-issuance");
+    }
+
+    setIssuedHistory(getAllCertificates());
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    setStatus(`Loaded details for ${record.studentName}. Prior credential will be marked superseded upon new issuance.`);
   };
 
   const handleSubmit = async (e) => {
@@ -357,6 +390,7 @@ export default function IssuerPortal() {
       const certRecord = {
         id: credentialId,
         hash: hashHex,
+        status: "VALID",
         docType: formData.docType,
         institution: formData.institution.trim(),
         studentName: formData.studentName,
@@ -589,11 +623,12 @@ export default function IssuerPortal() {
         </form>
       </div>
 
-      <div className="w-full max-w-4xl bg-[#0c1322] border border-slate-800 rounded-2xl p-6 shadow-2xl">
+      {/* University Issuance Registry with Revoke / Reissue Actions */}
+      <div className="w-full max-w-5xl bg-[#0c1322] border border-slate-800 rounded-2xl p-6 shadow-2xl">
         <div className="flex justify-between items-center mb-6">
           <div>
             <h2 className="text-lg font-bold text-white">University Issuance Database</h2>
-            <p className="text-xs text-slate-400">All student records with generated credentials</p>
+            <p className="text-xs text-slate-400">Manage, Revoke, or Reissue official student credentials</p>
           </div>
           <span className="bg-purple-950/60 border border-purple-800 text-purple-300 font-bold px-3.5 py-1 rounded-full text-xs">
             {issuedHistory.length} Total Records
@@ -609,31 +644,63 @@ export default function IssuerPortal() {
             <table className="w-full text-left text-xs">
               <thead className="border-b border-slate-800 text-slate-400 bg-slate-900/50">
                 <tr>
-                  <th className="p-3">Institution</th>
+                  <th className="p-3">Status</th>
                   <th className="p-3">Student Name</th>
-                  <th className="p-3">Login Email</th>
                   <th className="p-3">Document Type</th>
                   <th className="p-3">Credential ID</th>
                   <th className="p-3">Date</th>
-                  <th className="p-3 text-right">Action</th>
+                  <th className="p-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-slate-200">
                 {issuedHistory.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-800/30 transition">
-                    <td className="p-3 font-semibold text-purple-300">{item.institution || "Solana Tech Univ"}</td>
-                    <td className="p-3 font-semibold text-white">{item.studentName}</td>
-                    <td className="p-3 text-emerald-400 font-mono">{item.studentEmail || item.studentId}</td>
-                    <td className="p-3 text-slate-300">{item.docType}</td>
-                    <td className="p-3 font-mono text-[11px] text-slate-400">{item.id.slice(0, 8)}...{item.id.slice(-6)}</td>
+                    <td className="p-3">
+                      {item.status === "REVOKED" ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-950/80 border border-red-800 text-red-300">
+                          REVOKED
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950/80 border border-emerald-800 text-emerald-300">
+                          ACTIVE
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-3 font-semibold text-white">
+                      {item.studentName}
+                      <span className="block text-[10px] text-slate-400 font-mono">{item.studentId}</span>
+                    </td>
+                    <td className="p-3 text-purple-300">{item.docType}</td>
+                    <td className="p-3 font-mono text-[11px] text-slate-400">
+                      {item.id.slice(0, 8)}...{item.id.slice(-6)}
+                    </td>
                     <td className="p-3 text-slate-400">{new Date(item.timestamp * 1000).toLocaleDateString()}</td>
                     <td className="p-3 text-right">
-                      <button
-                        onClick={() => generatePDF(item)}
-                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1 rounded text-[11px] font-semibold transition"
-                      >
-                        Download PDF
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => generatePDF(item)}
+                          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded text-[11px] font-semibold transition"
+                          title="Download PDF"
+                        >
+                          PDF
+                        </button>
+                        <button
+                          onClick={() => handleReissueSetup(item)}
+                          className="bg-purple-900/60 hover:bg-purple-800 border border-purple-700 text-purple-200 px-2 py-1 rounded text-[11px] font-semibold transition"
+                          title="Reissue / Correct Credential"
+                        >
+                          Reissue
+                        </button>
+                        {item.status !== "REVOKED" && (
+                          <button
+                            onClick={() => handleRevoke(item.id, item.studentName)}
+                            className="bg-red-950/60 hover:bg-red-900 border border-red-800 text-red-300 px-2 py-1 rounded text-[11px] font-semibold transition"
+                            title="Revoke Certificate"
+                          >
+                            Revoke
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

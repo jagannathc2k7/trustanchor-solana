@@ -18,12 +18,30 @@ export function saveCertificate(certRecord) {
   return updated;
 }
 
+export function updateCertificateStatus(id, newStatus, reason = "") {
+  const all = getAllCertificates();
+  const updated = all.map((c) => {
+    if (c.id === id) {
+      return {
+        ...c,
+        status: newStatus,
+        revokedAt: newStatus === "REVOKED" ? Math.floor(Date.now() / 1000) : null,
+        revocationReason: reason || c.revocationReason || "Revoked by Issuing Authority",
+      };
+    }
+    return c;
+  });
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  return updated;
+}
+
 export function getCertificatesByStudent(studentKeyOrId) {
   const all = getAllCertificates();
   return all.filter(
     (c) =>
       c.studentKey?.toLowerCase() === studentKeyOrId?.toLowerCase() ||
-      c.studentId?.toLowerCase() === studentKeyOrId?.toLowerCase()
+      c.studentId?.toLowerCase() === studentKeyOrId?.toLowerCase() ||
+      c.studentEmail?.toLowerCase() === studentKeyOrId?.toLowerCase()
   );
 }
 
