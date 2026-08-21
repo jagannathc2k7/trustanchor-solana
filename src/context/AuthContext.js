@@ -5,27 +5,33 @@ import { useRouter } from "next/navigation";
 
 const AuthContext = createContext();
 
-const UNIVERSITY_USERS = [
+const PRESET_USERS = [
   {
-    username: "admin@stanford.edu",
+    username: "student@vit.ac.in",
     password: "password123",
-    role: "university",
-    name: "Registrar Office",
-    institution: "Stanford Institute of Technology",
+    role: "student",
+    name: "Arjun Krishnamurthy",
+    studentId: "25BLC1371",
   },
   {
-    username: "admin@mit.edu",
+    username: "issuer@vit.ac.in",
     password: "password123",
     role: "university",
-    name: "Office of Academic Records",
-    institution: "Massachusetts Academy of Science",
+    name: "Dr. Priya Sharma",
+    institution: "VIT Chennai",
   },
   {
-    username: "admin@university.edu",
+    username: "verifier@techcorp.com",
     password: "password123",
-    role: "university",
-    name: "Registrar Office",
-    institution: "Solana Technical University",
+    role: "company",
+    name: "XYZ Technologies Recruiter",
+    company: "XYZ Technologies India",
+  },
+  {
+    username: "admin@trustanchor.dev",
+    password: "password123",
+    role: "admin",
+    name: "System Platform Admin",
   },
 ];
 
@@ -40,89 +46,43 @@ export function AuthProvider({ children }) {
       try {
         setUser(JSON.parse(stored));
       } catch (e) {
-        console.error("Failed to parse stored auth", e);
+        console.error(e);
       }
     }
     setLoading(false);
   }, []);
 
-  const getStudentAccounts = () => {
-    if (typeof window === "undefined") return [];
-    const raw = localStorage.getItem("trustanchor_student_accounts");
-    return raw ? JSON.parse(raw) : [];
-  };
-
-  const registerStudentAccount = (studentData) => {
-    const accounts = getStudentAccounts();
-    const existingIndex = accounts.findIndex(
-      (a) => a.username.toLowerCase() === studentData.username.toLowerCase().trim()
-    );
-
-    if (existingIndex > -1) {
-      accounts[existingIndex] = { ...accounts[existingIndex], ...studentData };
-    } else {
-      accounts.push(studentData);
-    }
-    localStorage.setItem("trustanchor_student_accounts", JSON.stringify(accounts));
-  };
-
-  const login = (username, password, selectedRole) => {
+  const login = (username, password, role) => {
     const cleanUser = username.toLowerCase().trim();
+    const found = PRESET_USERS.find((u) => u.username.toLowerCase() === cleanUser && u.password === password);
 
-    if (selectedRole === "university") {
-      const foundUniv = UNIVERSITY_USERS.find(
-        (u) => u.username.toLowerCase() === cleanUser && u.password === password
-      );
-
-      if (foundUniv) {
-        setUser(foundUniv);
-        localStorage.setItem("trustanchor_auth_user", JSON.stringify(foundUniv));
-        router.push("/issuer");
-        return { success: true };
-      }
-
-      // Default fallback for any university email
-      if (cleanUser.includes("@")) {
-        const dynamicUnivName = cleanUser
-          .split("@")[1]
-          .split(".")[0]
-          .toUpperCase() + " UNIVERSITY";
-
-        const dynamicUniv = {
-          username: cleanUser,
-          password,
-          role: "university",
-          name: "Registrar Office",
-          institution: dynamicUnivName,
-        };
-        setUser(dynamicUniv);
-        localStorage.setItem("trustanchor_auth_user", JSON.stringify(dynamicUniv));
-        router.push("/issuer");
-        return { success: true };
-      }
-
-      return { success: false, error: "Invalid university credentials" };
+    if (found) {
+      setUser(found);
+      localStorage.setItem("trustanchor_auth_user", JSON.stringify(found));
+      redirectByRole(found.role);
+      return { success: true };
     }
 
-    if (selectedRole === "student") {
-      const studentAccounts = getStudentAccounts();
-      const foundStudent = studentAccounts.find(
-        (acc) => acc.username.toLowerCase() === cleanUser && acc.password === password
-      );
+    // Dynamic sign-in fallback
+    const dynamicUser = {
+      username: cleanUser,
+      password,
+      role: role || "student",
+      name: cleanUser.split("@")[0].toUpperCase(),
+      institution: cleanUser.includes("@") ? cleanUser.split("@")[1].split(".")[0].toUpperCase() + " UNIV" : "INSTITUTION",
+    };
+    setUser(dynamicUser);
+    localStorage.setItem("trustanchor_auth_user", JSON.stringify(dynamicUser));
+    redirectByRole(dynamicUser.role);
+    return { success: true };
+  };
 
-      if (foundStudent) {
-        setUser(foundStudent);
-        localStorage.setItem("trustanchor_auth_user", JSON.stringify(foundStudent));
-        router.push("/student");
-        return { success: true };
-      }
-      return {
-        success: false,
-        error: "No student account found with these credentials. Please contact your issuer.",
-      };
-    }
-
-    return { success: false, error: "Invalid role selected" };
+  const redirectByRole = (role) => {
+    if (role === "university") router.push("/issuer");
+    else if (role === "student") router.push("/student");
+    else if (role === "company") router.push("/company");
+    else if (role === "admin") router.push("/admin");
+    else router.push("/");
   };
 
   const logout = () => {
@@ -132,7 +92,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading, registerStudentAccount }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, PRESET_USERS }}>
       {children}
     </AuthContext.Provider>
   );
