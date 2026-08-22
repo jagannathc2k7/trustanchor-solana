@@ -31,36 +31,40 @@ export default function StudentVault() {
 
     try {
       const allCerts = await fetchAllCertificates();
-      
-      const cleanUserEmail = user.username?.trim().toLowerCase();
-      const cleanUserId = user.studentId?.trim().toLowerCase();
-      const cleanUserName = user.name?.trim().toLowerCase();
 
-      const studentCerts = allCerts.filter((c) => {
+      const cleanEmail = user.username?.trim().toLowerCase();
+      const cleanId = user.studentId?.trim().toLowerCase();
+      const cleanName = user.name?.trim().toLowerCase();
+
+      // Find all credentials matching this student
+      let matched = allCerts.filter((c) => {
         const cEmail = c.studentEmail?.trim().toLowerCase();
         const cId = c.studentId?.trim().toLowerCase();
         const cName = c.studentName?.trim().toLowerCase();
 
         return (
-          (cleanUserEmail && cEmail === cleanUserEmail) ||
-          (cleanUserId && cId === cleanUserId) ||
-          (cleanUserName && cName === cleanUserName)
+          (cleanEmail && cEmail === cleanEmail) ||
+          (cleanId && cId === cleanId) ||
+          (cleanName && cName === cleanName)
         );
       });
 
-      setCerts(studentCerts);
+      // Sort newest issued / re-issued to top
+      matched.sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
 
-      if (studentCerts.length > 0) {
+      setCerts(matched);
+
+      if (matched.length > 0) {
         setSelectedCert((prev) => {
-          if (!prev) return studentCerts[0];
-          const updated = studentCerts.find((c) => c.id === prev.id);
-          return updated || studentCerts[0];
+          if (!prev) return matched[0];
+          const syncCurrent = matched.find((c) => c.id === prev.id);
+          return syncCurrent || matched[0];
         });
       } else {
         setSelectedCert(null);
       }
     } catch (err) {
-      console.error("Error loading student records:", err);
+      console.error("Error loading student vault:", err);
     } finally {
       setLoading(false);
     }
@@ -231,6 +235,7 @@ export default function StudentVault() {
 
   return (
     <div className="min-h-screen py-10 px-4 max-w-5xl mx-auto space-y-6">
+      {/* Header Banner */}
       <div className="p-6 bg-[#0c1322] border border-white/[0.06] rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <span className="text-[10px] font-mono text-purple-400 uppercase tracking-widest font-bold block mb-1">
@@ -254,13 +259,14 @@ export default function StudentVault() {
 
       {certs.length === 0 ? (
         <div className="text-center py-16 bg-[#0c1322] border border-slate-800 rounded-2xl space-y-3">
-          <p className="text-slate-400 text-sm">No credentials currently found for this student account.</p>
+          <p className="text-slate-400 text-sm">No credentials found for this account.</p>
           <p className="text-xs text-slate-500">
-            If your record was deleted or re-issued, click "Refresh Vault" or contact your university.
+            If your credential was re-issued or updated, click "↻ Refresh Vault".
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Certificate List */}
           <div className="md:col-span-1 space-y-3">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Your Credentials</h3>
             {certs.map((c) => {
@@ -277,7 +283,7 @@ export default function StudentVault() {
                   }`}
                 >
                   <div className="flex justify-between items-start mb-2">
-                    <span className="text-[10px] font-bold text-slate-400 block truncate max-w-[140px]">
+                    <span className="text-[10px] font-bold text-slate-400 block truncate max-w-[130px]">
                       {c.docType}
                     </span>
                     <span
@@ -292,13 +298,16 @@ export default function StudentVault() {
                   </div>
                   <h4 className="text-sm font-bold text-white truncate">{c.degree || c.docType}</h4>
                   <p className="text-xs text-purple-400 font-medium mt-1">{c.institution}</p>
+                  <p className="text-[10px] text-slate-500 font-mono mt-1">ID: {c.id}</p>
                 </div>
               );
             })}
           </div>
 
+          {/* Certificate Detail Panel */}
           {selectedCert && (
             <div className="md:col-span-2 bg-[#0c1322] border border-slate-800 rounded-2xl p-6 space-y-6">
+              {/* Dynamic Status Alert */}
               {selectedCert.status === "REVOKED" ? (
                 <div className="p-4 bg-red-950/60 border border-red-800 rounded-xl space-y-1">
                   <div className="flex justify-between items-center">
@@ -323,6 +332,7 @@ export default function StudentVault() {
                 </div>
               )}
 
+              {/* Data Grid */}
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="bg-[#050811] p-3.5 rounded-xl border border-slate-800">
                   <span className="text-slate-500 text-[10px] block uppercase font-bold">Institution</span>
@@ -342,6 +352,7 @@ export default function StudentVault() {
                 </div>
               </div>
 
+              {/* Hash Fingerprint */}
               <div className="bg-[#050811] p-3.5 rounded-xl border border-slate-800">
                 <span className="text-slate-500 text-[10px] block uppercase font-bold">SHA-256 State Hash</span>
                 <span className="font-mono text-[11px] text-purple-300 break-all block mt-1">
@@ -349,6 +360,7 @@ export default function StudentVault() {
                 </span>
               </div>
 
+              {/* Action Buttons */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 <button
                   type="button"
@@ -372,6 +384,7 @@ export default function StudentVault() {
         </div>
       )}
 
+      {/* Selective Disclosure Modal */}
       {shareModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#0c1322] border border-slate-800 rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4 text-xs">
