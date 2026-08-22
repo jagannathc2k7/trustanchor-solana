@@ -1,154 +1,123 @@
-const CERTS_KEY = "trustanchor_issued_certificates";
-const TOKENS_KEY = "trustanchor_share_tokens";
-const ISSUERS_KEY = "trustanchor_trusted_issuers";
-
-const DEFAULT_ISSUERS = [
-  { id: "did:web:vit.ac.in", name: "VIT Chennai", status: "VERIFIED", domain: "vit.ac.in" },
-  { id: "did:web:iitm.ac.in", name: "IIT Madras", status: "VERIFIED", domain: "iitm.ac.in" },
-  { id: "did:web:unknown.edu", name: "Apex University", status: "PENDING", domain: "unknown.edu" },
-];
-
-export function getTrustedIssuers() {
-  if (typeof window === "undefined") return DEFAULT_ISSUERS;
-  const raw = localStorage.getItem(ISSUERS_KEY);
-  if (!raw) {
-    localStorage.setItem(ISSUERS_KEY, JSON.stringify(DEFAULT_ISSUERS));
-    return DEFAULT_ISSUERS;
-  }
+export async function fetchAllCertificates() {
   try {
-    return JSON.parse(raw);
-  } catch {
-    return DEFAULT_ISSUERS;
-  }
-}
-
-export function updateIssuerStatus(domainOrId, newStatus) {
-  const issuers = getTrustedIssuers();
-  const updated = issuers.map((item) =>
-    item.id === domainOrId || item.domain === domainOrId || item.name === domainOrId
-      ? { ...item, status: newStatus }
-      : item
-  );
-  localStorage.setItem(ISSUERS_KEY, JSON.stringify(updated));
-  return updated;
-}
-
-export function getAllCertificates() {
-  if (typeof window === "undefined") return [];
-  const raw = localStorage.getItem(CERTS_KEY);
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw);
+    const res = await fetch("/api/certificates", { cache: "no-store" });
+    if (!res.ok) return [];
+    return await res.json();
   } catch {
     return [];
   }
 }
 
-export function saveCertificate(certRecord) {
-  const existing = getAllCertificates();
-  const updated = [certRecord, ...existing.filter((c) => c.id !== certRecord.id)];
-  localStorage.setItem(CERTS_KEY, JSON.stringify(updated));
-  return updated;
-}
-
-export function updateCertificateRecord(id, updatedFields) {
-  const all = getAllCertificates();
-  const updated = all.map((c) => (c.id === id ? { ...c, ...updatedFields } : c));
-  localStorage.setItem(CERTS_KEY, JSON.stringify(updated));
-  return updated;
-}
-
-export function deleteCertificateRecord(id) {
-  const all = getAllCertificates();
-  const updated = all.filter((c) => c.id !== id);
-  localStorage.setItem(CERTS_KEY, JSON.stringify(updated));
-  return updated;
-}
-
-export function updateCertificateStatus(id, newStatus, reason = "") {
-  const all = getAllCertificates();
-  const updated = all.map((c) => {
-    if (c.id === id) {
-      return {
-        ...c,
-        status: newStatus,
-        revokedAt: newStatus === "REVOKED" ? Math.floor(Date.now() / 1000) : null,
-        revocationReason: reason || c.revocationReason || "Revoked by Issuing Authority",
-      };
-    }
-    return c;
+export async function saveCertificateToDb(certRecord) {
+  const res = await fetch("/api/certificates", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(certRecord),
   });
-  localStorage.setItem(CERTS_KEY, JSON.stringify(updated));
-  return updated;
+  return res.ok;
 }
 
-export function findCertificateByIdOrHash(query) {
-  if (!query) return null;
-  const all = getAllCertificates();
-  const clean = query.trim().toLowerCase();
-  return (
-    all.find(
-      (c) =>
-        c.id?.toLowerCase() === clean ||
-        c.hash?.toLowerCase() === clean ||
-        c.studentId?.toLowerCase() === clean
-    ) || null
-  );
+export async function updateCertificateInDb(id, fields) {
+  const res = await fetch("/api/certificates", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, ...fields }),
+  });
+  return res.ok;
 }
 
-export function createSelectiveShareToken({ certId, selectedFields, durationHours }) {
-  const tokens = getShareTokens();
-  const tokenId = "share_" + Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
-  
+export async function deleteCertificateFromDb(id) {
+  const res = await fetch(`/api/certificates?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  return res.ok;
+}
+
+export async function createSelectiveShareTokenDb({ certId, selectedFields, durationHours }) {
+  const tokenId = "share_" + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
   const expiryTimestamp =
     durationHours === "permanent"
       ? null
       : Math.floor(Date.now() / 1000) + Number(durationHours) * 3600;
 
-  const newToken = {
-    tokenId,
-    certId,
-    selectedFields,
-    expiryTimestamp,
-    createdAt: Math.floor(Date.now() / 1000),
-  };
+  await fetch("/api/share", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      tokenId,
+      certId,
+      selectedFields,
+      expiryTimestamp,
+      createdAt: Math.floor(Date.now() / 1000),
+    }),
+  });
 
-  tokens.push(newToken);
-  localStorage.setItem(TOKENS_KEY, JSON.stringify(tokens));
   return tokenId;
 }
 
-export function getShareTokens() {
-  if (typeof window === "undefined") return [];
-  const raw = localStorage.getItem(TOKENS_KEY);
-  if (!raw) return [];
+export async function verifyShareTokenDb(tokenId) {
   try {
-    return JSON.parse(raw);
+    const res = await fetch(`/api/share?token=${encodeURIComponent(tokenId)}`);
+    return await res.json();
+  } catch (err) {
+    return { valid: false, error: err.message };
+  }
+}
+
+// Fallback synchronous helpers for legacy component references
+export function getAllCertificates() {
+  if (typeof window === "undefined") return [];
+  const raw = localStorage.getItem("trustanchor_issued_certificates");
+  try {
+    return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-export function verifyShareToken(tokenId) {
-  const tokens = getShareTokens();
-  const record = tokens.find((t) => t.tokenId === tokenId);
-  if (!record) return { valid: false, error: "Invalid share token link." };
+export function saveCertificate(cert) {
+  const list = getAllCertificates();
+  const updated = [cert, ...list.filter((c) => c.id !== cert.id)];
+  localStorage.setItem("trustanchor_issued_certificates", JSON.stringify(updated));
+  return updated;
+}
 
-  const now = Math.floor(Date.now() / 1000);
-  if (record.expiryTimestamp && now > record.expiryTimestamp) {
-    return { valid: false, error: "This selective disclosure share link has expired." };
-  }
+export function updateCertificateRecord(id, fields) {
+  const list = getAllCertificates();
+  const updated = list.map((c) => (c.id === id ? { ...c, ...fields } : c));
+  localStorage.setItem("trustanchor_issued_certificates", JSON.stringify(updated));
+  return updated;
+}
 
-  const cert = findCertificateByIdOrHash(record.certId);
-  if (!cert) return { valid: false, error: "Original certificate not found in ledger." };
-  if (cert.status === "REVOKED") {
-    return { valid: false, isRevoked: true, cert, error: "ACCESS REVOKED: This credential has been revoked on-chain." };
-  }
+export function deleteCertificateRecord(id) {
+  const list = getAllCertificates();
+  const updated = list.filter((c) => c.id !== id);
+  localStorage.setItem("trustanchor_issued_certificates", JSON.stringify(updated));
+  return updated;
+}
 
-  return {
-    valid: true,
-    cert,
-    disclosedFields: record.selectedFields,
-    expiryTimestamp: record.expiryTimestamp,
-  };
+export function updateCertificateStatus(id, status, reason = "") {
+  return updateCertificateRecord(id, { status, revocationReason: reason });
+}
+
+export function createSelectiveShareToken(params) {
+  return createSelectiveShareTokenDb(params);
+}
+
+export function verifyShareToken(token) {
+  return verifyShareTokenDb(token);
+}
+
+export function getTrustedIssuers() {
+  return [
+    { id: "did:web:vit.ac.in", name: "VIT Chennai", status: "VERIFIED", domain: "vit.ac.in" },
+    { id: "did:web:iitm.ac.in", name: "IIT Madras", status: "VERIFIED", domain: "iitm.ac.in" },
+    { id: "did:web:unknown.edu", name: "Apex University", status: "PENDING", domain: "unknown.edu" },
+  ];
+}
+
+export function updateIssuerStatus(domainOrId, newStatus) {
+  return getTrustedIssuers().map((item) =>
+    item.id === domainOrId || item.domain === domainOrId ? { ...item, status: newStatus } : item
+  );
 }
