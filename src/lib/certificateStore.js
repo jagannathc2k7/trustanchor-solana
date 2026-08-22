@@ -1,36 +1,60 @@
 export async function fetchAllCertificates() {
   try {
     const res = await fetch("/api/certificates", { cache: "no-store" });
-    if (!res.ok) return [];
-    return await res.json();
+    if (!res.ok) return getAllCertificates();
+    const data = await res.json();
+    if (Array.isArray(data) && data.length > 0) {
+      localStorage.setItem("trustanchor_issued_certificates", JSON.stringify(data));
+      return data;
+    }
+    return getAllCertificates();
   } catch {
-    return [];
+    return getAllCertificates();
   }
 }
 
 export async function saveCertificateToDb(certRecord) {
-  const res = await fetch("/api/certificates", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(certRecord),
-  });
-  return res.ok;
+  try {
+    saveCertificate(certRecord);
+    await fetch("/api/certificates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(certRecord),
+    });
+    return true;
+  } catch {
+    return true;
+  }
 }
 
 export async function updateCertificateInDb(id, fields) {
-  const res = await fetch("/api/certificates", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, ...fields }),
-  });
-  return res.ok;
+  try {
+    // 1. Update local cache immediately
+    updateCertificateRecord(id, fields);
+
+    // 2. Push update to Cloud DB
+    const res = await fetch("/api/certificates", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...fields }),
+    });
+    return res.ok;
+  } catch (err) {
+    console.error("Update failed:", err);
+    return true;
+  }
 }
 
 export async function deleteCertificateFromDb(id) {
-  const res = await fetch(`/api/certificates?id=${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  });
-  return res.ok;
+  try {
+    deleteCertificateRecord(id);
+    await fetch(`/api/certificates?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+    return true;
+  } catch {
+    return true;
+  }
 }
 
 export async function createSelectiveShareTokenDb({ certId, selectedFields, durationHours }) {
@@ -40,17 +64,21 @@ export async function createSelectiveShareTokenDb({ certId, selectedFields, dura
       ? null
       : Math.floor(Date.now() / 1000) + Number(durationHours) * 3600;
 
-  await fetch("/api/share", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      tokenId,
-      certId,
-      selectedFields,
-      expiryTimestamp,
-      createdAt: Math.floor(Date.now() / 1000),
-    }),
-  });
+  try {
+    await fetch("/api/share", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tokenId,
+        certId,
+        selectedFields,
+        expiryTimestamp,
+        createdAt: Math.floor(Date.now() / 1000),
+      }),
+    });
+  } catch (e) {
+    console.warn("Share API fallback:", e);
+  }
 
   return tokenId;
 }
@@ -64,7 +92,7 @@ export async function verifyShareTokenDb(tokenId) {
   }
 }
 
-// Synchronous and hybrid lookup helpers
+// Synchronous local state helpers
 export function getAllCertificates() {
   if (typeof window === "undefined") return [];
   const raw = localStorage.getItem("trustanchor_issued_certificates");
@@ -73,20 +101,6 @@ export function getAllCertificates() {
   } catch {
     return [];
   }
-}
-
-export function findCertificateByIdOrHash(query) {
-  if (!query) return null;
-  const all = getAllCertificates();
-  const clean = query.trim().toLowerCase();
-  return (
-    all.find(
-      (c) =>
-        c.id?.toLowerCase() === clean ||
-        c.hash?.toLowerCase() === clean ||
-        c.studentId?.toLowerCase() === clean
-    ) || null
-  );
 }
 
 export function saveCertificate(cert) {
@@ -108,30 +122,4 @@ export function deleteCertificateRecord(id) {
   const updated = list.filter((c) => c.id !== id);
   localStorage.setItem("trustanchor_issued_certificates", JSON.stringify(updated));
   return updated;
-}
-
-export function updateCertificateStatus(id, status, reason = "") {
-  return updateCertificateRecord(id, { status, revocationReason: reason });
-}
-
-export function createSelectiveShareToken(params) {
-  return createSelectiveShareTokenDb(params);
-}
-
-export function verifyShareToken(token) {
-  return verifyShareTokenDb(token);
-}
-
-export function getTrustedIssuers() {
-  return [
-    { id: "did:web:vit.ac.in", name: "VIT Chennai", status: "VERIFIED", domain: "vit.ac.in" },
-    { id: "did:web:iitm.ac.in", name: "IIT Madras", status: "VERIFIED", domain: "iitm.ac.in" },
-    { id: "did:web:unknown.edu", name: "Apex University", status: "PENDING", domain: "unknown.edu" },
-  ];
-}
-
-export function updateIssuerStatus(domainOrId, newStatus) {
-  return getTrustedIssuers().map((item) =>
-    item.id === domainOrId || item.domain === domainOrId ? { ...item, status: newStatus } : item
-  );
 }

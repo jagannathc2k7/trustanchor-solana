@@ -9,7 +9,6 @@ import {
   updateCertificateInDb,
   deleteCertificateFromDb,
 } from "../../lib/certificateStore";
-import { sendIssuanceEmail } from "../../lib/emailService";
 
 export default function IssuerPortal() {
   const [mounted, setMounted] = useState(false);
@@ -21,14 +20,13 @@ export default function IssuerPortal() {
     studentName: "Alex Morgan",
     studentId: "CS-2026-8841",
     studentEmail: "alex.morgan@student.edu",
-    studentPassword: "password123",
     degree: "Bachelor of Technology in Computer Science",
     cgpa: "3.92",
   });
 
-  const [sendNotification, setSendNotification] = useState(true);
   const [issuedHistory, setIssuedHistory] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [revoking, setRevoking] = useState(false);
   const [status, setStatus] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -53,40 +51,56 @@ export default function IssuerPortal() {
   const handleSaveEdit = async (e) => {
     e.preventDefault();
     if (!editingRecord) return;
+
+    // Optimistic UI update
+    setIssuedHistory((prev) =>
+      prev.map((item) => (item.id === editingRecord.id ? editingRecord : item))
+    );
+
     await updateCertificateInDb(editingRecord.id, editingRecord);
     await loadData();
     setEditingRecord(null);
   };
 
   const handleDelete = async (id) => {
+    // Optimistic UI update
+    setIssuedHistory((prev) => prev.filter((item) => item.id !== id));
     await deleteCertificateFromDb(id);
     await loadData();
   };
 
   const handleConfirmRevocation = async () => {
     if (!revokingRecord) return;
-    await updateCertificateInDb(revokingRecord.id, {
-      status: "REVOKED",
-      revocationReason: revokeReason,
-    });
-    await loadData();
-    setRevokingRecord(null);
-  };
+    setRevoking(true);
+    setErrorMsg("");
 
-  const handleResendEmail = async (record) => {
-    setStatus(`Dispatching credentials email to ${record.studentEmail}...`);
+    const targetId = revokingRecord.id;
+    const targetReason = revokeReason || "Academic Correction & Grade Discrepancy";
+
     try {
-      await sendIssuanceEmail({
-        studentName: record.studentName,
-        studentEmail: record.studentEmail,
-        docType: record.docType,
-        institution: record.institution,
-        credentialId: record.id,
-        studentPassword: "password123",
+      // 1. Instant optimistic update so the UI reflects change immediately
+      setIssuedHistory((prev) =>
+        prev.map((item) =>
+          item.id === targetId
+            ? { ...item, status: "REVOKED", revocationReason: targetReason }
+            : item
+        )
+      );
+
+      // 2. Persist update in database and local storage
+      await updateCertificateInDb(targetId, {
+        status: "REVOKED",
+        revocationReason: targetReason,
       });
-      setStatus(`Credentials email sent successfully to ${record.studentEmail}!`);
-    } catch {
-      setErrorMsg("Failed to dispatch email.");
+
+      setStatus(`Certificate ${targetId} successfully REVOKED.`);
+      setRevokingRecord(null);
+      setRevokeReason("Academic Correction & Grade Discrepancy");
+    } catch (err) {
+      console.error("Revocation error:", err);
+      setErrorMsg("Failed to complete revocation request.");
+    } finally {
+      setRevoking(false);
     }
   };
 
@@ -124,23 +138,13 @@ export default function IssuerPortal() {
         timestamp: now,
       };
 
+      // Optimistic addition to current state table
+      setIssuedHistory((prev) => [certRecord, ...prev]);
+
       await saveCertificateToDb(certRecord);
       await loadData();
 
-      // Trigger Email Dispatch if enabled
-      if (sendNotification) {
-        setStatus("Dispatching notification email to student...");
-        await sendIssuanceEmail({
-          studentName: formData.studentName,
-          studentEmail: formData.studentEmail.trim(),
-          docType: formData.docType,
-          institution: formData.institution.trim(),
-          credentialId,
-          studentPassword: formData.studentPassword,
-        });
-      }
-
-      setStatus(`Certificate issued & confirmation email dispatched to ${formData.studentEmail}!`);
+      setStatus(`Certificate successfully issued! ID: ${credentialId}`);
     } catch (err) {
       setErrorMsg(err.message || "Failed to issue certificate");
     } finally {
@@ -171,16 +175,17 @@ export default function IssuerPortal() {
 
   return (
     <div className="min-h-screen bg-[#050811] text-white flex flex-col items-center pt-8 px-4 pb-20">
+      {/* Issuance Form */}
       <div className="w-full max-w-2xl bg-[#0f172a] border border-gray-800 rounded-2xl p-8 shadow-2xl mb-12">
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-2xl font-bold text-white">Issuer Portal</h1>
             <p className="text-xs text-purple-400 font-medium mt-0.5">
-              Logged in: {user.institution || formData.institution} ({user.name})
+              Authority: {user.institution || formData.institution} ({user.name})
             </p>
           </div>
-          <span className="bg-emerald-950/80 border border-emerald-700 text-emerald-300 text-xs px-3 py-1 rounded-full font-bold">
-            Email Engine Active
+          <span className="bg-purple-950/80 border border-purple-700 text-purple-300 text-xs px-3 py-1 rounded-full font-bold">
+            SHA-256 Anchored
           </span>
         </div>
 
@@ -236,50 +241,21 @@ export default function IssuerPortal() {
             </div>
           </div>
 
-          <div className="p-4 bg-[#0a0f1d] border border-purple-900/50 rounded-xl space-y-3">
-            <div className="flex justify-between items-center">
-              <p className="text-xs font-semibold text-purple-300 uppercase tracking-wider">
-                Student Vault & Email Delivery
-              </p>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={sendNotification}
-                  onChange={(e) => setSendNotification(e.target.checked)}
-                  className="rounded border-slate-700 bg-slate-900 text-purple-600 focus:ring-0"
-                />
-                <span className="text-xs text-purple-300 font-semibold">Send Email Notification</span>
-              </label>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Student Email Address</label>
-                <input
-                  type="email"
-                  value={formData.studentEmail}
-                  onChange={(e) => setFormData({ ...formData, studentEmail: e.target.value })}
-                  className="w-full bg-[#050811] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Temporary Password</label>
-                <input
-                  type="text"
-                  value={formData.studentPassword}
-                  onChange={(e) => setFormData({ ...formData, studentPassword: e.target.value })}
-                  className="w-full bg-[#050811] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500"
-                  required
-                />
-              </div>
-            </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Student Email (Vault Identifier)</label>
+            <input
+              type="email"
+              value={formData.studentEmail}
+              onChange={(e) => setFormData({ ...formData, studentEmail: e.target.value })}
+              className="w-full bg-[#0a0f1d] border border-gray-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-purple-500"
+              required
+            />
           </div>
 
           {formData.docType !== "MIGRATION CERTIFICATE" && (
             <div className="grid grid-cols-3 gap-4">
               <div className="col-span-2">
-                <label className="block text-xs text-gray-400 mb-1">Degree</label>
+                <label className="block text-xs text-gray-400 mb-1">Degree Program</label>
                 <input
                   type="text"
                   value={formData.degree}
@@ -319,7 +295,7 @@ export default function IssuerPortal() {
               disabled={loading}
               className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition disabled:opacity-50 cursor-pointer"
             >
-              {loading ? "Processing & Dispatching..." : `Issue & Dispatch ${formData.docType}`}
+              {loading ? "Anchoring Record..." : `Issue & Anchor ${formData.docType}`}
             </button>
           </div>
         </form>
@@ -333,7 +309,7 @@ export default function IssuerPortal() {
             <p className="text-xs text-slate-400">Live synchronized records across all client devices</p>
           </div>
           <span className="bg-purple-950/60 border border-purple-800 text-purple-300 font-bold px-3.5 py-1 rounded-full text-xs">
-            {issuedHistory.length} Rows
+            {issuedHistory.length} Records
           </span>
         </div>
 
@@ -370,30 +346,22 @@ export default function IssuerPortal() {
                     <td className="p-3 font-semibold text-purple-300 max-w-[140px] truncate">{item.institution}</td>
                     <td className="p-3 font-semibold text-white">
                       {item.studentName}
-                      <span className="block text-[10px] text-emerald-400 font-mono">{item.studentEmail}</span>
+                      <span className="block text-[10px] text-slate-400 font-mono">{item.studentEmail}</span>
                     </td>
                     <td className="p-3 text-slate-300">{item.docType}</td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           type="button"
-                          onClick={() => handleResendEmail(item)}
-                          className="bg-purple-950/80 hover:bg-purple-900 border border-purple-800 text-purple-300 px-2 py-1 rounded text-[11px] font-semibold transition cursor-pointer"
-                          title="Resend Email Notification"
-                        >
-                          ✉ Email
-                        </button>
-                        <button
-                          type="button"
                           onClick={() => setInspectingRecord(item)}
-                          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded text-[11px] font-semibold transition cursor-pointer"
+                          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1 rounded text-[11px] font-semibold transition cursor-pointer"
                         >
                           View
                         </button>
                         <button
                           type="button"
                           onClick={() => setEditingRecord({ ...item })}
-                          className="bg-blue-950/80 hover:bg-blue-900 border border-blue-800 text-blue-300 px-2 py-1 rounded text-[11px] font-semibold transition cursor-pointer"
+                          className="bg-blue-950/80 hover:bg-blue-900 border border-blue-800 text-blue-300 px-2.5 py-1 rounded text-[11px] font-semibold transition cursor-pointer"
                         >
                           Edit
                         </button>
@@ -404,7 +372,7 @@ export default function IssuerPortal() {
                               setRevokingRecord(item);
                               setRevokeReason("Academic Correction & Grade Discrepancy");
                             }}
-                            className="bg-red-950/80 hover:bg-red-900 border border-red-800 text-red-300 px-2 py-1 rounded text-[11px] font-semibold transition cursor-pointer"
+                            className="bg-red-950/80 hover:bg-red-900 border border-red-800 text-red-300 px-2.5 py-1 rounded text-[11px] font-semibold transition cursor-pointer"
                           >
                             Revoke
                           </button>
@@ -412,7 +380,7 @@ export default function IssuerPortal() {
                           <button
                             type="button"
                             onClick={() => handleDelete(item.id)}
-                            className="bg-red-950/40 hover:bg-red-900 border border-red-900/60 text-red-400 px-2 py-1 rounded text-[11px] font-semibold transition cursor-pointer"
+                            className="bg-red-950/40 hover:bg-red-900 border border-red-900/60 text-red-400 px-2.5 py-1 rounded text-[11px] font-semibold transition cursor-pointer"
                           >
                             Delete
                           </button>
@@ -512,16 +480,18 @@ export default function IssuerPortal() {
               <button
                 type="button"
                 onClick={() => setRevokingRecord(null)}
-                className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold cursor-pointer"
+                disabled={revoking}
+                className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmRevocation}
-                className="flex-1 py-2.5 bg-red-700 hover:bg-red-800 text-white rounded-lg text-xs font-semibold cursor-pointer"
+                disabled={revoking}
+                className="flex-1 py-2.5 bg-red-700 hover:bg-red-800 text-white rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
               >
-                Confirm Revocation
+                {revoking ? "Revoking..." : "Confirm Revocation"}
               </button>
             </div>
           </div>
