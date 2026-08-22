@@ -1,67 +1,100 @@
 import { NextResponse } from "next/server";
-import { put, list } from "@vercel/blob";
+import { put, list, del } from "@vercel/blob";
 
-const BLOB_FILENAME = "trustanchor_certificates_db.json";
+const CERTS_FILENAME = "trustanchor_certificates_db.json";
 
 async function getCertificatesData() {
   try {
     const { blobs } = await list();
-    const existingBlob = blobs.find((b) => b.pathname === BLOB_FILENAME);
+    const existingBlob = blobs.find((b) => b.pathname === CERTS_FILENAME);
     if (!existingBlob) return [];
-
     const res = await fetch(existingBlob.url, { cache: "no-store" });
     if (!res.ok) return [];
     return await res.json();
-  } catch (err) {
-    console.error("Error reading Vercel Blob:", err);
+  } catch {
     return [];
   }
 }
 
-async function saveCertificatesData(data) {
-  await put(BLOB_FILENAME, JSON.stringify(data), {
-    access: "public",
-    addRandomSuffix: false,
-  });
-}
-
+// 1. Fetch all certificates
 export async function GET() {
-  const data = await getCertificatesData();
-  return NextResponse.json(data);
+  try {
+    const data = await getCertificatesData();
+    return NextResponse.json(data, {
+      headers: { "Cache-Control": "no-store, max-age=0" },
+    });
+  } catch (err) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
 }
 
+// 2. Issue new certificate
 export async function POST(req) {
   try {
-    const newRecord = await req.json();
+    const body = await req.json();
     const current = await getCertificatesData();
-    const updated = [newRecord, ...current.filter((c) => c.id !== newRecord.id)];
-    await saveCertificatesData(updated);
-    return NextResponse.json({ success: true, record: newRecord });
+    const updated = [body, ...current.filter((c) => c.id !== body.id)];
+
+    await put(CERTS_FILENAME, JSON.stringify(updated), {
+      access: "public",
+      addRandomSuffix: false,
+    });
+
+    return NextResponse.json({ success: true, record: body });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
+// 3. Revoke or edit certificate (PATCH)
 export async function PATCH(req) {
   try {
-    const { id, ...updates } = await req.json();
+    const { id, ...fields } = await req.json();
+    if (!id) {
+      return NextResponse.json({ error: "Certificate ID is required." }, { status: 400 });
+    }
+
     const current = await getCertificatesData();
-    const updated = current.map((c) => (c.id === id ? { ...c, ...updates } : c));
-    await saveCertificatesData(updated);
-    return NextResponse.json({ success: true });
+    const target = current.find((c) => c.id === id);
+
+    if (!target) {
+      return NextResponse.json({ error: "Record not found." }, { status: 404 });
+    }
+
+    const updated = current.map((cert) =>
+      cert.id === id ? { ...cert, ...fields } : cert
+    );
+
+    await put(CERTS_FILENAME, JSON.stringify(updated), {
+      access: "public",
+      addRandomSuffix: false,
+    });
+
+    return NextResponse.json({ success: true, id, updatedFields: fields });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
+// 4. Delete record
 export async function DELETE(req) {
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json({ error: "Certificate ID is required." }, { status: 400 });
+    }
+
     const current = await getCertificatesData();
     const updated = current.filter((c) => c.id !== id);
-    await saveCertificatesData(updated);
-    return NextResponse.json({ success: true });
+
+    await put(CERTS_FILENAME, JSON.stringify(updated), {
+      access: "public",
+      addRandomSuffix: false,
+    });
+
+    return NextResponse.json({ success: true, deletedId: id });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
