@@ -64,7 +64,7 @@ export async function verifyShareTokenDb(tokenId) {
   }
 }
 
-// Fallback synchronous helpers for legacy component references
+// Synchronous and hybrid lookup helpers
 export function getAllCertificates() {
   if (typeof window === "undefined") return [];
   const raw = localStorage.getItem("trustanchor_issued_certificates");
@@ -73,6 +73,20 @@ export function getAllCertificates() {
   } catch {
     return [];
   }
+}
+
+export function findCertificateByIdOrHash(query) {
+  if (!query) return null;
+  const all = getAllCertificates();
+  const clean = query.trim().toLowerCase();
+  return (
+    all.find(
+      (c) =>
+        c.id?.toLowerCase() === clean ||
+        c.hash?.toLowerCase() === clean ||
+        c.studentId?.toLowerCase() === clean
+    ) || null
+  );
 }
 
 export function saveCertificate(cert) {
