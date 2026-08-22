@@ -9,7 +9,19 @@ async function getTokensData() {
     const { blobs } = await list();
     const existingBlob = blobs.find((b) => b.pathname === TOKENS_FILENAME);
     if (!existingBlob) return [];
+    const res = await fetch(existingBlob.url, { cache: "no-store" });
+    if (!res.ok) return [];
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
 
+async function getCertificatesData() {
+  try {
+    const { blobs } = await list();
+    const existingBlob = blobs.find((b) => b.pathname === CERTS_FILENAME);
+    if (!existingBlob) return [];
     const res = await fetch(existingBlob.url, { cache: "no-store" });
     if (!res.ok) return [];
     return await res.json();
@@ -36,39 +48,63 @@ export async function POST(req) {
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
-    const token = searchParams.get("token");
-    const tokens = await getTokensData();
+    const rawQuery = searchParams.get("token") || searchParams.get("query") || "";
+    const cleanQuery = rawQuery.trim();
 
-    const tokenRecord = tokens.find((t) => t.tokenId === token);
-    if (!tokenRecord) {
-      return NextResponse.json({ valid: false, error: "Invalid share token." }, { status: 404 });
+    if (!cleanQuery) {
+      return NextResponse.json({ valid: false, error: "Empty query provided." }, { status: 400 });
     }
 
-    const now = Math.floor(Date.now() / 1000);
-    if (tokenRecord.expiryTimestamp && now > Number(tokenRecord.expiryTimestamp)) {
-      return NextResponse.json({ valid: false, error: "Share token has expired." }, { status: 410 });
+    const allCerts = await getCertificatesData();
+    const allTokens = await getTokensData();
+
+    // 1. Check if input is a Selective Share Token
+    const tokenRecord = allTokens.find((t) => t.tokenId === cleanQuery);
+    if (tokenRecord) {
+      const now = Math.floor(Date.now() / 1000);
+      if (tokenRecord.expiryTimestamp && now > Number(tokenRecord.expiryTimestamp)) {
+        return NextResponse.json({ valid: false, error: "Share token has expired." }, { status: 410 });
+      }
+
+      const cert = allCerts.find((c) => c.id === tokenRecord.certId);
+      if (!cert) {
+        return NextResponse.json({ valid: false, error: "Associated record not found." }, { status: 404 });
+      }
+
+      return NextResponse.json({
+        valid: cert.status !== "REVOKED",
+        isRevoked: cert.status === "REVOKED",
+        cert,
+        disclosedFields: tokenRecord.selectedFields,
+      });
     }
 
-    // Fetch corresponding certificate from Blob
-    const { blobs } = await list();
-    const certBlob = blobs.find((b) => b.pathname === CERTS_FILENAME);
-    let certs = [];
-    if (certBlob) {
-      const res = await fetch(certBlob.url, { cache: "no-store" });
-      certs = await res.json();
+    // 2. Direct Lookup: By Credential ID, State Hash, or Roll Number
+    const directCert = allCerts.find(
+      (c) =>
+        c.id?.toLowerCase() === cleanQuery.toLowerCase() ||
+        c.hash?.toLowerCase() === cleanQuery.toLowerCase() ||
+        c.studentId?.toLowerCase() === cleanQuery.toLowerCase()
+    );
+
+    if (directCert) {
+      return NextResponse.json({
+        valid: directCert.status !== "REVOKED",
+        isRevoked: directCert.status === "REVOKED",
+        cert: directCert,
+        disclosedFields: {
+          studentName: true,
+          rollNumber: true,
+          degree: true,
+          cgpa: true,
+        },
+      });
     }
 
-    const cert = certs.find((c) => c.id === tokenRecord.certId);
-    if (!cert) {
-      return NextResponse.json({ valid: false, error: "Original record not found." }, { status: 404 });
-    }
-
-    return NextResponse.json({
-      valid: cert.status !== "REVOKED",
-      isRevoked: cert.status === "REVOKED",
-      cert,
-      disclosedFields: tokenRecord.selectedFields,
-    });
+    return NextResponse.json(
+      { valid: false, error: "No matching record found for this identifier or token." },
+      { status: 404 }
+    );
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
