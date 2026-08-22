@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { jsPDF } from "jspdf";
 import { useAuth } from "../../context/AuthContext";
@@ -25,47 +25,56 @@ export default function StudentVault() {
   const [generatedLink, setGeneratedLink] = useState("");
   const [copySuccess, setCopySuccess] = useState(false);
 
-  useEffect(() => {
-    async function loadStudentCerts() {
-      setLoading(true);
+  const loadStudentCerts = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+
+    try {
       const allCerts = await fetchAllCertificates();
       
-      let studentCerts = allCerts.filter(
-        (c) =>
-          c.studentEmail?.toLowerCase() === user?.username?.toLowerCase() ||
-          c.studentEmail?.toLowerCase() === user?.email?.toLowerCase() ||
-          c.studentId === user?.studentId
-      );
+      const cleanUserEmail = user.username?.trim().toLowerCase();
+      const cleanUserId = user.studentId?.trim().toLowerCase();
+      const cleanUserName = user.name?.trim().toLowerCase();
 
-      if (studentCerts.length === 0 && user?.role === "student") {
-        studentCerts = [
-          {
-            id: "cred_demo_alex_2026",
-            hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-            status: "VALID",
-            docType: "OFFICIAL ACADEMIC TRANSCRIPT",
-            institution: "VIT Chennai",
-            studentName: user.name || "Alex Morgan",
-            studentId: "CS-2026-8841",
-            studentEmail: user.username || "alex.morgan@student.edu",
-            degree: "Bachelor of Technology in Computer Science",
-            cgpa: "3.92",
-            timestamp: Math.floor(Date.now() / 1000),
-          },
-        ];
-      }
+      let studentCerts = allCerts.filter((c) => {
+        const cEmail = c.studentEmail?.trim().toLowerCase();
+        const cId = c.studentId?.trim().toLowerCase();
+        const cName = c.studentName?.trim().toLowerCase();
+
+        return (
+          (cleanUserEmail && cEmail === cleanUserEmail) ||
+          (cleanUserId && cId === cleanUserId) ||
+          (cleanUserName && cName === cleanUserName)
+        );
+      });
 
       setCerts(studentCerts);
+
+      // Keep selected certificate in sync with updated database status
       if (studentCerts.length > 0) {
-        setSelectedCert(studentCerts[0]);
+        setSelectedCert((prev) => {
+          if (!prev) return studentCerts[0];
+          const updated = studentCerts.find((c) => c.id === prev.id);
+          return updated || studentCerts[0];
+        });
+      } else {
+        setSelectedCert(null);
       }
+    } catch (err) {
+      console.error("Error loading student records:", err);
+    } finally {
       setLoading(false);
     }
-
-    if (user) {
-      loadStudentCerts();
-    }
   }, [user]);
+
+  // Fetch on mount and whenever user switches back to this tab
+  useEffect(() => {
+    loadStudentCerts();
+
+    const handleFocus = () => loadStudentCerts();
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [loadStudentCerts]);
 
   const handleGenerateShare = async () => {
     if (!selectedCert) return;
@@ -86,7 +95,6 @@ export default function StudentVault() {
     setTimeout(() => setCopySuccess(false), 2500);
   };
 
-  // Pure Native jsPDF Generator (Zero Dependency on autoTable)
   const handleDownloadPDF = () => {
     if (!selectedCert) return;
     setPdfGenerating(true);
@@ -100,8 +108,8 @@ export default function StudentVault() {
 
       const isRevoked = selectedCert.status === "REVOKED";
 
-      // 1. Elegant Borders
-      doc.setDrawColor(124, 58, 237); // Purple primary
+      // Outer & Inner Borders
+      doc.setDrawColor(124, 58, 237);
       doc.setLineWidth(1.2);
       doc.rect(10, 10, 190, 277);
 
@@ -109,19 +117,19 @@ export default function StudentVault() {
       doc.setLineWidth(0.4);
       doc.rect(13, 13, 184, 271);
 
-      // 2. Revocation Stamp if Revoked
+      // Watermark if Revoked
       if (isRevoked) {
         doc.setTextColor(239, 68, 68);
-        doc.setFontSize(38);
+        doc.setFontSize(36);
         doc.setFont("helvetica", "bold");
-        doc.text("REVOKED / INVALID", 32, 150, { angle: 45 });
+        doc.text("REVOKED / INVALID", 35, 145, { angle: 45 });
       }
 
-      // 3. Institution Header
+      // Institution Header
       doc.setTextColor(15, 23, 42);
-      doc.setFontSize(20);
+      doc.setFontSize(18);
       doc.setFont("helvetica", "bold");
-      doc.text((selectedCert.institution || "TRUSTANCHOR ACADEMY").toUpperCase(), 105, 30, { align: "center" });
+      doc.text((selectedCert.institution || "INSTITUTION").toUpperCase(), 105, 30, { align: "center" });
 
       doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
@@ -132,7 +140,7 @@ export default function StudentVault() {
       doc.setLineWidth(0.5);
       doc.line(25, 42, 185, 42);
 
-      // 4. Document Type
+      // Document Type
       doc.setTextColor(30, 41, 59);
       doc.setFontSize(15);
       doc.setFont("helvetica", "bold");
@@ -141,14 +149,14 @@ export default function StudentVault() {
       doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(71, 85, 105);
-      doc.text("This official credential certifies that the following academic record has been registered:", 105, 64, { align: "center" });
+      doc.text("This credential verifies that the following record is registered in the ledger:", 105, 64, { align: "center" });
 
-      // 5. Clean Data Grid (Native Canvas Rows)
+      // Rows
       const rows = [
         { label: "Student Full Name", value: selectedCert.studentName || "N/A" },
         { label: "Registration / Roll ID", value: selectedCert.studentId || "N/A" },
         { label: "Student Email", value: selectedCert.studentEmail || "N/A" },
-        { label: "Degree / Program", value: selectedCert.degree || selectedCert.docType || "N/A" },
+        { label: "Degree / Major", value: selectedCert.degree || selectedCert.docType || "N/A" },
         { label: "Cumulative CGPA", value: `${selectedCert.cgpa || "N/A"} / 10.0` },
         { label: "Credential Status", value: selectedCert.status || "VALID" },
         { label: "Issuance Date", value: new Date((selectedCert.timestamp || Date.now() / 1000) * 1000).toLocaleDateString() },
@@ -157,7 +165,6 @@ export default function StudentVault() {
 
       let startY = 75;
       rows.forEach((row, i) => {
-        // Alternate background
         if (i % 2 === 0) {
           doc.setFillColor(248, 250, 252);
           doc.rect(25, startY - 4, 160, 9.5, "F");
@@ -177,7 +184,7 @@ export default function StudentVault() {
         startY += 9.5;
       });
 
-      // 6. SHA-256 State Hash Verification Box
+      // SHA-256 Box
       startY += 10;
       doc.setFillColor(245, 243, 255);
       doc.rect(25, startY, 160, 22, "F");
@@ -192,27 +199,13 @@ export default function StudentVault() {
       doc.setFont("courier", "normal");
       doc.setFontSize(7);
       doc.setTextColor(51, 65, 85);
-      const splitHash = doc.splitTextToSize(selectedCert.hash || "0x000000000000000000", 150);
+      const splitHash = doc.splitTextToSize(selectedCert.hash || "0x000000000000", 150);
       doc.text(splitHash, 30, startY + 12);
 
-      // 7. Signature Footers
-      const sigY = startY + 44;
-      doc.setDrawColor(148, 163, 184);
-      doc.setLineWidth(0.4);
-      doc.line(30, sigY, 80, sigY);
-      doc.line(130, sigY, 180, sigY);
-
-      doc.setFontSize(8.5);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(30, 41, 59);
-      doc.text("Dean of Academic Affairs", 55, sigY + 5, { align: "center" });
-      doc.text("University Registrar", 155, sigY + 5, { align: "center" });
-
-      const fileName = `${(selectedCert.studentName || "credential").replace(/\s+/g, "_")}_Record.pdf`;
+      const fileName = `${(selectedCert.studentName || "credential").replace(/\s+/g, "_")}_Transcript.pdf`;
       doc.save(fileName);
     } catch (err) {
-      console.error("PDF generation failed:", err);
-      alert("Failed to generate PDF: " + err.message);
+      console.error("PDF generation error:", err);
     } finally {
       setPdfGenerating(false);
     }
@@ -221,7 +214,7 @@ export default function StudentVault() {
   if (authLoading || loading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center text-slate-400 text-xs">
-        Loading Student Vault...
+        Loading Student Identity Vault...
       </div>
     );
   }
@@ -257,19 +250,26 @@ export default function StudentVault() {
           <p className="text-xs text-slate-400 mt-0.5">{user.username}</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs px-3 py-1.5 rounded-xl bg-emerald-950/80 border border-emerald-700 text-emerald-300 font-bold">
-            {certs.length} Credential(s) Issued
+          <button
+            onClick={loadStudentCerts}
+            className="text-xs px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-semibold transition cursor-pointer"
+          >
+            ↻ Refresh Vault
+          </button>
+          <span className="text-xs px-3 py-1.5 rounded-xl bg-purple-950/80 border border-purple-700 text-purple-300 font-bold">
+            {certs.length} Credential(s)
           </span>
         </div>
       </div>
 
       {certs.length === 0 ? (
-        <div className="text-center py-16 bg-[#0c1322] border border-slate-800 rounded-2xl">
+        <div className="text-center py-16 bg-[#0c1322] border border-slate-800 rounded-2xl space-y-3">
           <p className="text-slate-400 text-sm">No credentials have been issued to this student account yet.</p>
+          <p className="text-xs text-slate-500">Contact your university registrar to issue your transcript.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* List of Certificates */}
+          {/* Certificate List */}
           <div className="md:col-span-1 space-y-3">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Your Credentials</h3>
             {certs.map((c) => {
@@ -309,19 +309,24 @@ export default function StudentVault() {
           {/* Certificate Detail Panel */}
           {selectedCert && (
             <div className="md:col-span-2 bg-[#0c1322] border border-slate-800 rounded-2xl p-6 space-y-6">
-              {/* Status Banner */}
+              {/* Dynamic Status Alert */}
               {selectedCert.status === "REVOKED" ? (
-                <div className="p-4 bg-red-950/60 border border-red-800 rounded-xl">
-                  <h4 className="text-xs font-bold text-red-300 uppercase tracking-wider">Credential Revoked</h4>
-                  <p className="text-xs text-red-200 mt-1">
-                    Reason: {selectedCert.revocationReason || "Academic Correction"}
+                <div className="p-4 bg-red-950/60 border border-red-800 rounded-xl space-y-1">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-xs font-bold text-red-300 uppercase tracking-wider">Credential Status: Revoked</h4>
+                    <span className="px-2 py-0.5 text-[10px] font-bold bg-red-900 border border-red-700 text-red-100 rounded">
+                      INVALIDATED
+                    </span>
+                  </div>
+                  <p className="text-xs text-red-200">
+                    Reason: {selectedCert.revocationReason || "Academic Discrepancy & Invalidation registered by the issuing university."}
                   </p>
                 </div>
               ) : (
                 <div className="p-4 bg-emerald-950/40 border border-emerald-800/80 rounded-xl flex items-center justify-between">
                   <div>
                     <h4 className="text-xs font-bold text-emerald-300 uppercase tracking-wider">Cryptographically Verified</h4>
-                    <p className="text-[11px] text-emerald-400 mt-0.5">Tamper-Proof & Active in Database</p>
+                    <p className="text-[11px] text-emerald-400 mt-0.5">Tamper-Proof & Active in Ledger</p>
                   </div>
                   <span className="text-xs px-2.5 py-1 bg-emerald-900/80 border border-emerald-700 text-emerald-200 font-bold rounded-lg">
                     ACTIVE
@@ -371,9 +376,9 @@ export default function StudentVault() {
                   type="button"
                   onClick={() => setShareModalOpen(true)}
                   disabled={selectedCert.status === "REVOKED"}
-                  className="py-3 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-40 text-white font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-2"
+                  className="py-3 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-2"
                 >
-                  ⚡ Selective Share Link & QR
+                  {selectedCert.status === "REVOKED" ? "🚫 Sharing Disabled (Revoked)" : "⚡ Selective Share Link & QR"}
                 </button>
               </div>
             </div>
