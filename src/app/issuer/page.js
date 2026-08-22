@@ -26,6 +26,7 @@ export default function IssuerPortal() {
     cgpa: "3.92",
   });
 
+  const [sendNotification, setSendNotification] = useState(true);
   const [issuedHistory, setIssuedHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
@@ -72,6 +73,23 @@ export default function IssuerPortal() {
     setRevokingRecord(null);
   };
 
+  const handleResendEmail = async (record) => {
+    setStatus(`Dispatching credentials email to ${record.studentEmail}...`);
+    try {
+      await sendIssuanceEmail({
+        studentName: record.studentName,
+        studentEmail: record.studentEmail,
+        docType: record.docType,
+        institution: record.institution,
+        credentialId: record.id,
+        studentPassword: "password123",
+      });
+      setStatus(`Credentials email sent successfully to ${record.studentEmail}!`);
+    } catch {
+      setErrorMsg("Failed to dispatch email.");
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg("");
@@ -88,7 +106,7 @@ export default function IssuerPortal() {
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 
-      setStatus("Anchoring record to verified database...");
+      setStatus("Anchoring record to cloud database...");
 
       const certRecord = {
         id: credentialId,
@@ -109,7 +127,9 @@ export default function IssuerPortal() {
       await saveCertificateToDb(certRecord);
       await loadData();
 
-      try {
+      // Trigger Email Dispatch if enabled
+      if (sendNotification) {
+        setStatus("Dispatching notification email to student...");
         await sendIssuanceEmail({
           studentName: formData.studentName,
           studentEmail: formData.studentEmail.trim(),
@@ -117,13 +137,10 @@ export default function IssuerPortal() {
           institution: formData.institution.trim(),
           credentialId,
           studentPassword: formData.studentPassword,
-          adminEmail: user?.username || "admin@vit.ac.in",
         });
-      } catch (e) {
-        console.warn("Email bypassed:", e);
       }
 
-      setStatus(`Certificate issued & anchored successfully!`);
+      setStatus(`Certificate issued & confirmation email dispatched to ${formData.studentEmail}!`);
     } catch (err) {
       setErrorMsg(err.message || "Failed to issue certificate");
     } finally {
@@ -163,7 +180,7 @@ export default function IssuerPortal() {
             </p>
           </div>
           <span className="bg-emerald-950/80 border border-emerald-700 text-emerald-300 text-xs px-3 py-1 rounded-full font-bold">
-            Authority Verified
+            Email Engine Active
           </span>
         </div>
 
@@ -220,9 +237,21 @@ export default function IssuerPortal() {
           </div>
 
           <div className="p-4 bg-[#0a0f1d] border border-purple-900/50 rounded-xl space-y-3">
-            <p className="text-xs font-semibold text-purple-300 uppercase tracking-wider">
-              Student Vault Credentials
-            </p>
+            <div className="flex justify-between items-center">
+              <p className="text-xs font-semibold text-purple-300 uppercase tracking-wider">
+                Student Vault & Email Delivery
+              </p>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={sendNotification}
+                  onChange={(e) => setSendNotification(e.target.checked)}
+                  className="rounded border-slate-700 bg-slate-900 text-purple-600 focus:ring-0"
+                />
+                <span className="text-xs text-purple-300 font-semibold">Send Email Notification</span>
+              </label>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Student Email Address</label>
@@ -290,7 +319,7 @@ export default function IssuerPortal() {
               disabled={loading}
               className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition disabled:opacity-50 cursor-pointer"
             >
-              {loading ? "Saving to Database..." : `Store & Issue ${formData.docType}`}
+              {loading ? "Processing & Dispatching..." : `Issue & Dispatch ${formData.docType}`}
             </button>
           </div>
         </form>
@@ -321,7 +350,6 @@ export default function IssuerPortal() {
                   <th className="p-3">Institution</th>
                   <th className="p-3">Student Details</th>
                   <th className="p-3">Document Type</th>
-                  <th className="p-3">Credential ID</th>
                   <th className="p-3 text-right">Actions</th>
                 </tr>
               </thead>
@@ -345,20 +373,27 @@ export default function IssuerPortal() {
                       <span className="block text-[10px] text-emerald-400 font-mono">{item.studentEmail}</span>
                     </td>
                     <td className="p-3 text-slate-300">{item.docType}</td>
-                    <td className="p-3 font-mono text-[11px] text-slate-400">{item.id.slice(0, 8)}...{item.id.slice(-6)}</td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           type="button"
+                          onClick={() => handleResendEmail(item)}
+                          className="bg-purple-950/80 hover:bg-purple-900 border border-purple-800 text-purple-300 px-2 py-1 rounded text-[11px] font-semibold transition cursor-pointer"
+                          title="Resend Email Notification"
+                        >
+                          ✉ Email
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => setInspectingRecord(item)}
-                          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1.5 rounded text-[11px] font-semibold transition cursor-pointer"
+                          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded text-[11px] font-semibold transition cursor-pointer"
                         >
                           View
                         </button>
                         <button
                           type="button"
                           onClick={() => setEditingRecord({ ...item })}
-                          className="bg-blue-950/80 hover:bg-blue-900 border border-blue-800 text-blue-300 px-2.5 py-1.5 rounded text-[11px] font-semibold transition cursor-pointer"
+                          className="bg-blue-950/80 hover:bg-blue-900 border border-blue-800 text-blue-300 px-2 py-1 rounded text-[11px] font-semibold transition cursor-pointer"
                         >
                           Edit
                         </button>
@@ -369,7 +404,7 @@ export default function IssuerPortal() {
                               setRevokingRecord(item);
                               setRevokeReason("Academic Correction & Grade Discrepancy");
                             }}
-                            className="bg-red-950/80 hover:bg-red-900 border border-red-800 text-red-300 px-2.5 py-1.5 rounded text-[11px] font-semibold transition cursor-pointer"
+                            className="bg-red-950/80 hover:bg-red-900 border border-red-800 text-red-300 px-2 py-1 rounded text-[11px] font-semibold transition cursor-pointer"
                           >
                             Revoke
                           </button>
@@ -377,7 +412,7 @@ export default function IssuerPortal() {
                           <button
                             type="button"
                             onClick={() => handleDelete(item.id)}
-                            className="bg-red-950/40 hover:bg-red-900 border border-red-900/60 text-red-400 px-2.5 py-1.5 rounded text-[11px] font-semibold transition cursor-pointer"
+                            className="bg-red-950/40 hover:bg-red-900 border border-red-900/60 text-red-400 px-2 py-1 rounded text-[11px] font-semibold transition cursor-pointer"
                           >
                             Delete
                           </button>
@@ -437,17 +472,6 @@ export default function IssuerPortal() {
                     className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2.5 text-white outline-none"
                   />
                 </div>
-              </div>
-              <div>
-                <label className="block text-slate-400 mb-1 font-semibold">Status</label>
-                <select
-                  value={editingRecord.status || "VALID"}
-                  onChange={(e) => setEditingRecord({ ...editingRecord, status: e.target.value })}
-                  className="w-full bg-[#050811] border border-slate-700 rounded-lg p-2.5 text-white outline-none"
-                >
-                  <option value="VALID">VALID</option>
-                  <option value="REVOKED">REVOKED</option>
-                </select>
               </div>
 
               <div className="flex gap-2 pt-4">
