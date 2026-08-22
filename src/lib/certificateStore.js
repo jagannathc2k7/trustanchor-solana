@@ -1,9 +1,12 @@
 export async function fetchAllCertificates() {
   try {
-    const res = await fetch("/api/certificates", { cache: "no-store" });
+    const res = await fetch(`/api/certificates?t=${Date.now()}`, {
+      cache: "no-store",
+      headers: { "Pragma": "no-cache" }
+    });
     if (!res.ok) return getAllCertificates();
     const data = await res.json();
-    if (Array.isArray(data) && data.length > 0) {
+    if (Array.isArray(data)) {
       localStorage.setItem("trustanchor_issued_certificates", JSON.stringify(data));
       return data;
     }

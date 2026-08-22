@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
-import { put, list, del } from "@vercel/blob";
+import { put, list } from "@vercel/blob";
 
 const CERTS_FILENAME = "trustanchor_certificates_db.json";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 async function getCertificatesData() {
   try {
     const { blobs } = await list();
     const existingBlob = blobs.find((b) => b.pathname === CERTS_FILENAME);
     if (!existingBlob) return [];
-    const res = await fetch(existingBlob.url, { cache: "no-store" });
+    const res = await fetch(`${existingBlob.url}?t=${Date.now()}`, { cache: "no-store" });
     if (!res.ok) return [];
     return await res.json();
   } catch {
@@ -16,19 +19,19 @@ async function getCertificatesData() {
   }
 }
 
-// 1. Fetch all certificates
 export async function GET() {
   try {
     const data = await getCertificatesData();
     return NextResponse.json(data, {
-      headers: { "Cache-Control": "no-store, max-age=0" },
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      },
     });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
-// 2. Issue new certificate
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -46,7 +49,6 @@ export async function POST(req) {
   }
 }
 
-// 3. Revoke or edit certificate (PATCH)
 export async function PATCH(req) {
   try {
     const { id, ...fields } = await req.json();
@@ -55,12 +57,6 @@ export async function PATCH(req) {
     }
 
     const current = await getCertificatesData();
-    const target = current.find((c) => c.id === id);
-
-    if (!target) {
-      return NextResponse.json({ error: "Record not found." }, { status: 404 });
-    }
-
     const updated = current.map((cert) =>
       cert.id === id ? { ...cert, ...fields } : cert
     );
@@ -76,7 +72,6 @@ export async function PATCH(req) {
   }
 }
 
-// 4. Delete record
 export async function DELETE(req) {
   try {
     const { searchParams } = new URL(req.url);
