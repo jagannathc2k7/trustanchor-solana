@@ -5,7 +5,7 @@ import { fetchAllCertificates } from "../lib/certificateStore";
 
 const AuthContext = createContext();
 
-export const BASE_PRESET_USERS = [
+export const DEFAULT_DEV_PRESETS = [
   {
     role: "university",
     username: "issuer@vit.ac.in",
@@ -31,20 +31,33 @@ export const BASE_PRESET_USERS = [
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [matrixUsers, setMatrixUsers] = useState(BASE_PRESET_USERS);
+  const [deviceHistory, setDeviceHistory] = useState([]);
+  const [allDbUsers, setAllDbUsers] = useState([]);
+  const [isDevMode, setIsDevMode] = useState(false);
 
-  const loadMatrixUsers = async () => {
+  const loadDeviceHistory = () => {
+    if (typeof window === "undefined") return;
+    const history = localStorage.getItem("trustanchor_device_account_history");
+    try {
+      setDeviceHistory(history ? JSON.parse(history) : []);
+    } catch {
+      setDeviceHistory([]);
+    }
+
+    const devFlag = localStorage.getItem("trustanchor_is_dev_device");
+    setIsDevMode(devFlag === "true");
+  };
+
+  const loadAllGlobalUsers = async () => {
     try {
       const allCerts = await fetchAllCertificates();
-      
-      // Extract all unique student records issued in the database
       const dynamicStudents = [];
-      const seenEmails = new Set();
+      const seen = new Set();
 
       allCerts.forEach((cert) => {
         const email = cert.studentEmail?.toLowerCase();
-        if (email && !seenEmails.has(email)) {
-          seenEmails.add(email);
+        if (email && !seen.has(email)) {
+          seen.add(email);
           dynamicStudents.push({
             role: "student",
             username: cert.studentEmail,
@@ -59,21 +72,9 @@ export function AuthProvider({ children }) {
         }
       });
 
-      // Default demo student if no database rows exist yet
-      if (dynamicStudents.length === 0) {
-        dynamicStudents.push({
-          role: "student",
-          username: "alex.morgan@student.edu",
-          password: "password123",
-          name: "Alex Morgan",
-          studentId: "CS-2026-8841",
-          institution: "VIT Chennai",
-        });
-      }
-
-      setMatrixUsers([...dynamicStudents, ...BASE_PRESET_USERS]);
+      setAllDbUsers([...dynamicStudents, ...DEFAULT_DEV_PRESETS]);
     } catch {
-      setMatrixUsers(BASE_PRESET_USERS);
+      setAllDbUsers(DEFAULT_DEV_PRESETS);
     }
   };
 
@@ -86,17 +87,25 @@ export function AuthProvider({ children }) {
         setUser(null);
       }
     }
-    loadMatrixUsers();
+    loadDeviceHistory();
+    loadAllGlobalUsers();
     setLoading(false);
   }, []);
+
+  const toggleDevDevice = (enable) => {
+    setIsDevMode(enable);
+    if (enable) {
+      localStorage.setItem("trustanchor_is_dev_device", "true");
+    } else {
+      localStorage.removeItem("trustanchor_is_dev_device");
+    }
+  };
 
   const login = (username, password, role) => {
     const cleanUser = username?.trim().toLowerCase();
     
-    // Find matching user from dynamic list
-    const found = matrixUsers.find(
-      (u) => u.username.toLowerCase() === cleanUser
-    );
+    // Check in global list or fabricate
+    const found = allDbUsers.find((u) => u.username.toLowerCase() === cleanUser);
 
     let loggedInProfile;
     if (found) {
@@ -105,13 +114,30 @@ export function AuthProvider({ children }) {
       loggedInProfile = {
         role: role || "student",
         username: username,
+        password: password || "password123",
         name: username.split("@")[0],
       };
     }
 
     setUser(loggedInProfile);
     localStorage.setItem("trustanchor_auth_user", JSON.stringify(loggedInProfile));
+
+    // Save this specific account to this device's history
+    if (typeof window !== "undefined") {
+      const currentHistory = deviceHistory.filter(
+        (item) => item.username.toLowerCase() !== loggedInProfile.username.toLowerCase()
+      );
+      const updated = [loggedInProfile, ...currentHistory];
+      setDeviceHistory(updated);
+      localStorage.setItem("trustanchor_device_account_history", JSON.stringify(updated));
+    }
+
     return { success: true, user: loggedInProfile };
+  };
+
+  const clearDeviceHistory = () => {
+    setDeviceHistory([]);
+    localStorage.removeItem("trustanchor_device_account_history");
   };
 
   const logout = () => {
@@ -126,8 +152,12 @@ export function AuthProvider({ children }) {
         loading,
         login,
         logout,
-        matrixUsers,
-        refreshMatrix: loadMatrixUsers,
+        deviceHistory,
+        allDbUsers,
+        isDevMode,
+        toggleDevDevice,
+        clearDeviceHistory,
+        refreshGlobal: loadAllGlobalUsers,
       }}
     >
       {children}
