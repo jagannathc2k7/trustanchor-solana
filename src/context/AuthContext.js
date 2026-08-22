@@ -1,98 +1,135 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { fetchAllCertificates } from "../lib/certificateStore";
 
 const AuthContext = createContext();
 
-const PRESET_USERS = [
+export const BASE_PRESET_USERS = [
   {
-    username: "student@vit.ac.in",
-    password: "password123",
-    role: "student",
-    name: "Arjun Krishnamurthy",
-    studentId: "25BLC1371",
-  },
-  {
+    role: "university",
     username: "issuer@vit.ac.in",
     password: "password123",
-    role: "university",
-    name: "Dr. Priya Sharma",
+    name: "Dr. K. Ramanathan",
     institution: "VIT Chennai",
   },
   {
+    role: "company",
     username: "verifier@techcorp.com",
     password: "password123",
-    role: "company",
-    name: "XYZ Technologies Recruiter",
-    company: "XYZ Technologies India",
+    name: "Sarah Jenkins",
+    company: "TechCorp Global Talent",
   },
   {
+    role: "admin",
     username: "admin@trustanchor.dev",
     password: "password123",
-    role: "admin",
-    name: "System Platform Admin",
+    name: "Registry Admin",
   },
 ];
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
+  const [matrixUsers, setMatrixUsers] = useState(BASE_PRESET_USERS);
+
+  const loadMatrixUsers = async () => {
+    try {
+      const allCerts = await fetchAllCertificates();
+      
+      // Extract all unique student records issued in the database
+      const dynamicStudents = [];
+      const seenEmails = new Set();
+
+      allCerts.forEach((cert) => {
+        const email = cert.studentEmail?.toLowerCase();
+        if (email && !seenEmails.has(email)) {
+          seenEmails.add(email);
+          dynamicStudents.push({
+            role: "student",
+            username: cert.studentEmail,
+            password: "password123",
+            name: cert.studentName,
+            studentId: cert.studentId,
+            institution: cert.institution,
+            degree: cert.degree || cert.docType,
+            cgpa: cert.cgpa,
+            status: cert.status,
+          });
+        }
+      });
+
+      // Default demo student if no database rows exist yet
+      if (dynamicStudents.length === 0) {
+        dynamicStudents.push({
+          role: "student",
+          username: "alex.morgan@student.edu",
+          password: "password123",
+          name: "Alex Morgan",
+          studentId: "CS-2026-8841",
+          institution: "VIT Chennai",
+        });
+      }
+
+      setMatrixUsers([...dynamicStudents, ...BASE_PRESET_USERS]);
+    } catch {
+      setMatrixUsers(BASE_PRESET_USERS);
+    }
+  };
 
   useEffect(() => {
     const stored = localStorage.getItem("trustanchor_auth_user");
     if (stored) {
       try {
         setUser(JSON.parse(stored));
-      } catch (e) {
-        console.error(e);
+      } catch {
+        setUser(null);
       }
     }
+    loadMatrixUsers();
     setLoading(false);
   }, []);
 
   const login = (username, password, role) => {
-    const cleanUser = username.toLowerCase().trim();
-    const found = PRESET_USERS.find((u) => u.username.toLowerCase() === cleanUser && u.password === password);
+    const cleanUser = username?.trim().toLowerCase();
+    
+    // Find matching user from dynamic list
+    const found = matrixUsers.find(
+      (u) => u.username.toLowerCase() === cleanUser
+    );
 
+    let loggedInProfile;
     if (found) {
-      setUser(found);
-      localStorage.setItem("trustanchor_auth_user", JSON.stringify(found));
-      redirectByRole(found.role);
-      return { success: true };
+      loggedInProfile = { ...found };
+    } else {
+      loggedInProfile = {
+        role: role || "student",
+        username: username,
+        name: username.split("@")[0],
+      };
     }
 
-    // Dynamic sign-in fallback
-    const dynamicUser = {
-      username: cleanUser,
-      password,
-      role: role || "student",
-      name: cleanUser.split("@")[0].toUpperCase(),
-      institution: cleanUser.includes("@") ? cleanUser.split("@")[1].split(".")[0].toUpperCase() + " UNIV" : "INSTITUTION",
-    };
-    setUser(dynamicUser);
-    localStorage.setItem("trustanchor_auth_user", JSON.stringify(dynamicUser));
-    redirectByRole(dynamicUser.role);
-    return { success: true };
-  };
-
-  const redirectByRole = (role) => {
-    if (role === "university") router.push("/issuer");
-    else if (role === "student") router.push("/student");
-    else if (role === "company") router.push("/company");
-    else if (role === "admin") router.push("/admin");
-    else router.push("/");
+    setUser(loggedInProfile);
+    localStorage.setItem("trustanchor_auth_user", JSON.stringify(loggedInProfile));
+    return { success: true, user: loggedInProfile };
   };
 
   const logout = () => {
     setUser(null);
     localStorage.removeItem("trustanchor_auth_user");
-    router.push("/login");
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading, PRESET_USERS }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        login,
+        logout,
+        matrixUsers,
+        refreshMatrix: loadMatrixUsers,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
