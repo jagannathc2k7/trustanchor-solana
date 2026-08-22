@@ -14,7 +14,6 @@ export default function Navbar() {
     { name: "Student Vault", href: "/student" },
     { name: "Issuer Portal", href: "/issuer" },
     { name: "Company Engine", href: "/company" },
-    { name: "Trust Registry", href: "/admin" },
   ];
 
   return (

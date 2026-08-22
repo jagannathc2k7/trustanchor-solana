@@ -197,7 +197,7 @@ export default function HomePage() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-6 text-left">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-6 text-left">
           <Link href="/student" className="p-4 bg-[#0c1322]/60 hover:bg-[#0c1322] border border-white/[0.06] hover:border-purple-500/40 rounded-xl transition group">
             <span className="text-xs font-bold text-slate-200 block group-hover:text-purple-400">Student Vault</span>
             <span className="text-[11px] text-slate-500 mt-1 block">View PDF & share</span>
@@ -209,10 +209,6 @@ export default function HomePage() {
           <Link href="/company" className="p-4 bg-[#0c1322]/60 hover:bg-[#0c1322] border border-white/[0.06] hover:border-purple-500/40 rounded-xl transition group">
             <span className="text-xs font-bold text-slate-200 block group-hover:text-purple-400">Company Engine</span>
             <span className="text-[11px] text-slate-500 mt-1 block">Recruiter portal</span>
-          </Link>
-          <Link href="/admin" className="p-4 bg-[#0c1322]/60 hover:bg-[#0c1322] border border-white/[0.06] hover:border-purple-500/40 rounded-xl transition group">
-            <span className="text-xs font-bold text-slate-200 block group-hover:text-purple-400">Trust Registry</span>
-            <span className="text-[11px] text-slate-500 mt-1 block">Manage issuers</span>
           </Link>
         </div>
       </div>
