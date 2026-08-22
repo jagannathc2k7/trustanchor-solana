@@ -1,6 +1,6 @@
 import "./globals.css";
 import { AuthProvider } from "../context/AuthContext";
-import Navbar from "../components/Navbar";
+import Navbar from "./Navbar";
 
 export const metadata = {
   title: "TrustAnchor | Decentralized Academic Credentials",
