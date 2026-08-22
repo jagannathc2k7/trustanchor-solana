@@ -36,7 +36,7 @@ export default function StudentVault() {
       const cleanUserId = user.studentId?.trim().toLowerCase();
       const cleanUserName = user.name?.trim().toLowerCase();
 
-      let studentCerts = allCerts.filter((c) => {
+      const studentCerts = allCerts.filter((c) => {
         const cEmail = c.studentEmail?.trim().toLowerCase();
         const cId = c.studentId?.trim().toLowerCase();
         const cName = c.studentName?.trim().toLowerCase();
@@ -50,7 +50,6 @@ export default function StudentVault() {
 
       setCerts(studentCerts);
 
-      // Keep selected certificate in sync with updated database status
       if (studentCerts.length > 0) {
         setSelectedCert((prev) => {
           if (!prev) return studentCerts[0];
@@ -67,10 +66,8 @@ export default function StudentVault() {
     }
   }, [user]);
 
-  // Fetch on mount and whenever user switches back to this tab
   useEffect(() => {
     loadStudentCerts();
-
     const handleFocus = () => loadStudentCerts();
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
@@ -108,7 +105,6 @@ export default function StudentVault() {
 
       const isRevoked = selectedCert.status === "REVOKED";
 
-      // Outer & Inner Borders
       doc.setDrawColor(124, 58, 237);
       doc.setLineWidth(1.2);
       doc.rect(10, 10, 190, 277);
@@ -117,7 +113,6 @@ export default function StudentVault() {
       doc.setLineWidth(0.4);
       doc.rect(13, 13, 184, 271);
 
-      // Watermark if Revoked
       if (isRevoked) {
         doc.setTextColor(239, 68, 68);
         doc.setFontSize(36);
@@ -125,7 +120,6 @@ export default function StudentVault() {
         doc.text("REVOKED / INVALID", 35, 145, { angle: 45 });
       }
 
-      // Institution Header
       doc.setTextColor(15, 23, 42);
       doc.setFontSize(18);
       doc.setFont("helvetica", "bold");
@@ -140,7 +134,6 @@ export default function StudentVault() {
       doc.setLineWidth(0.5);
       doc.line(25, 42, 185, 42);
 
-      // Document Type
       doc.setTextColor(30, 41, 59);
       doc.setFontSize(15);
       doc.setFont("helvetica", "bold");
@@ -151,7 +144,6 @@ export default function StudentVault() {
       doc.setTextColor(71, 85, 105);
       doc.text("This credential verifies that the following record is registered in the ledger:", 105, 64, { align: "center" });
 
-      // Rows
       const rows = [
         { label: "Student Full Name", value: selectedCert.studentName || "N/A" },
         { label: "Registration / Roll ID", value: selectedCert.studentId || "N/A" },
@@ -184,7 +176,6 @@ export default function StudentVault() {
         startY += 9.5;
       });
 
-      // SHA-256 Box
       startY += 10;
       doc.setFillColor(245, 243, 255);
       doc.rect(25, startY, 160, 22, "F");
@@ -240,7 +231,6 @@ export default function StudentVault() {
 
   return (
     <div className="min-h-screen py-10 px-4 max-w-5xl mx-auto space-y-6">
-      {/* Header Banner */}
       <div className="p-6 bg-[#0c1322] border border-white/[0.06] rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <span className="text-[10px] font-mono text-purple-400 uppercase tracking-widest font-bold block mb-1">
@@ -264,12 +254,13 @@ export default function StudentVault() {
 
       {certs.length === 0 ? (
         <div className="text-center py-16 bg-[#0c1322] border border-slate-800 rounded-2xl space-y-3">
-          <p className="text-slate-400 text-sm">No credentials have been issued to this student account yet.</p>
-          <p className="text-xs text-slate-500">Contact your university registrar to issue your transcript.</p>
+          <p className="text-slate-400 text-sm">No credentials currently found for this student account.</p>
+          <p className="text-xs text-slate-500">
+            If your record was deleted or re-issued, click "Refresh Vault" or contact your university.
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Certificate List */}
           <div className="md:col-span-1 space-y-3">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Your Credentials</h3>
             {certs.map((c) => {
@@ -306,10 +297,8 @@ export default function StudentVault() {
             })}
           </div>
 
-          {/* Certificate Detail Panel */}
           {selectedCert && (
             <div className="md:col-span-2 bg-[#0c1322] border border-slate-800 rounded-2xl p-6 space-y-6">
-              {/* Dynamic Status Alert */}
               {selectedCert.status === "REVOKED" ? (
                 <div className="p-4 bg-red-950/60 border border-red-800 rounded-xl space-y-1">
                   <div className="flex justify-between items-center">
@@ -334,7 +323,6 @@ export default function StudentVault() {
                 </div>
               )}
 
-              {/* Data Grid */}
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="bg-[#050811] p-3.5 rounded-xl border border-slate-800">
                   <span className="text-slate-500 text-[10px] block uppercase font-bold">Institution</span>
@@ -354,7 +342,6 @@ export default function StudentVault() {
                 </div>
               </div>
 
-              {/* Hash Fingerprint */}
               <div className="bg-[#050811] p-3.5 rounded-xl border border-slate-800">
                 <span className="text-slate-500 text-[10px] block uppercase font-bold">SHA-256 State Hash</span>
                 <span className="font-mono text-[11px] text-purple-300 break-all block mt-1">
@@ -362,7 +349,6 @@ export default function StudentVault() {
                 </span>
               </div>
 
-              {/* Action Buttons */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 <button
                   type="button"
@@ -386,7 +372,6 @@ export default function StudentVault() {
         </div>
       )}
 
-      {/* Selective Disclosure Modal */}
       {shareModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#0c1322] border border-slate-800 rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4 text-xs">
@@ -405,7 +390,7 @@ export default function StudentVault() {
             </div>
 
             <p className="text-slate-400 leading-relaxed">
-              Choose exactly which attributes third parties can inspect. Hidden attributes will remain completely inaccessible.
+              Choose exactly which attributes third parties can inspect.
             </p>
 
             <div className="space-y-2 bg-[#050811] p-4 rounded-xl border border-slate-800">

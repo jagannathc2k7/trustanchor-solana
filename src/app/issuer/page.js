@@ -51,22 +51,19 @@ export default function IssuerPortal() {
   const handleSaveEdit = async (e) => {
     e.preventDefault();
     if (!editingRecord) return;
-
-    // Optimistic UI update
     setIssuedHistory((prev) =>
       prev.map((item) => (item.id === editingRecord.id ? editingRecord : item))
     );
-
     await updateCertificateInDb(editingRecord.id, editingRecord);
     await loadData();
     setEditingRecord(null);
   };
 
   const handleDelete = async (id) => {
-    // Optimistic UI update
     setIssuedHistory((prev) => prev.filter((item) => item.id !== id));
     await deleteCertificateFromDb(id);
     await loadData();
+    setStatus("Record deleted completely from ledger.");
   };
 
   const handleConfirmRevocation = async () => {
@@ -78,7 +75,6 @@ export default function IssuerPortal() {
     const targetReason = revokeReason || "Academic Correction & Grade Discrepancy";
 
     try {
-      // 1. Instant optimistic update so the UI reflects change immediately
       setIssuedHistory((prev) =>
         prev.map((item) =>
           item.id === targetId
@@ -87,7 +83,6 @@ export default function IssuerPortal() {
         )
       );
 
-      // 2. Persist update in database and local storage
       await updateCertificateInDb(targetId, {
         status: "REVOKED",
         revocationReason: targetReason,
@@ -95,12 +90,42 @@ export default function IssuerPortal() {
 
       setStatus(`Certificate ${targetId} successfully REVOKED.`);
       setRevokingRecord(null);
-      setRevokeReason("Academic Correction & Grade Discrepancy");
-    } catch (err) {
-      console.error("Revocation error:", err);
+    } catch {
       setErrorMsg("Failed to complete revocation request.");
     } finally {
       setRevoking(false);
+    }
+  };
+
+  // RE-ISSUE FUNCTIONALITY
+  const handleReissue = async (record) => {
+    setStatus(`Re-issuing new active credential for ${record.studentName}...`);
+    try {
+      const newCredId = "cred_" + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+      const now = Math.floor(Date.now() / 1000);
+
+      const rawPayload = `${record.institution}|${record.docType}|${record.studentName}|${record.studentId}|${record.degree}|${record.cgpa}|${newCredId}|${now}`;
+      const msgBuffer = new TextEncoder().encode(rawPayload);
+      const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
+      const hashHex = Array.from(new Uint8Array(hashBuffer))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+
+      const newCert = {
+        ...record,
+        id: newCredId,
+        hash: hashHex,
+        status: "VALID",
+        revocationReason: null,
+        timestamp: now,
+      };
+
+      setIssuedHistory((prev) => [newCert, ...prev]);
+      await saveCertificateToDb(newCert);
+      await loadData();
+      setStatus(`Successfully re-issued active credential: ${newCredId}`);
+    } catch {
+      setErrorMsg("Failed to re-issue credential.");
     }
   };
 
@@ -117,10 +142,9 @@ export default function IssuerPortal() {
       const rawPayload = `${formData.institution}|${formData.docType}|${formData.studentName}|${formData.studentId}|${formData.degree}|${formData.cgpa}|${credentialId}|${now}`;
       const msgBuffer = new TextEncoder().encode(rawPayload);
       const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-
-      setStatus("Anchoring record to cloud database...");
+      const hashHex = Array.from(new Uint8Array(hashBuffer))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
 
       const certRecord = {
         id: credentialId,
@@ -138,9 +162,7 @@ export default function IssuerPortal() {
         timestamp: now,
       };
 
-      // Optimistic addition to current state table
       setIssuedHistory((prev) => [certRecord, ...prev]);
-
       await saveCertificateToDb(certRecord);
       await loadData();
 
@@ -351,6 +373,14 @@ export default function IssuerPortal() {
                     <td className="p-3 text-slate-300">{item.docType}</td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleReissue(item)}
+                          className="bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 px-2.5 py-1 rounded text-[11px] font-semibold transition cursor-pointer"
+                          title="Issue a new active replacement"
+                        >
+                          ⚡ Re-issue
+                        </button>
                         <button
                           type="button"
                           onClick={() => setInspectingRecord(item)}

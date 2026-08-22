@@ -2,23 +2,31 @@ export async function fetchAllCertificates() {
   try {
     const res = await fetch(`/api/certificates?t=${Date.now()}`, {
       cache: "no-store",
-      headers: { "Pragma": "no-cache" }
+      headers: { Pragma: "no-cache" },
     });
-    if (!res.ok) return getAllCertificates();
+    if (!res.ok) return [];
     const data = await res.json();
     if (Array.isArray(data)) {
       localStorage.setItem("trustanchor_issued_certificates", JSON.stringify(data));
       return data;
     }
-    return getAllCertificates();
+    return [];
   } catch {
-    return getAllCertificates();
+    const raw = localStorage.getItem("trustanchor_issued_certificates");
+    try {
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
   }
 }
 
 export async function saveCertificateToDb(certRecord) {
   try {
-    saveCertificate(certRecord);
+    const current = await fetchAllCertificates();
+    const updated = [certRecord, ...current.filter((c) => c.id !== certRecord.id)];
+    localStorage.setItem("trustanchor_issued_certificates", JSON.stringify(updated));
+
     await fetch("/api/certificates", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -32,25 +40,27 @@ export async function saveCertificateToDb(certRecord) {
 
 export async function updateCertificateInDb(id, fields) {
   try {
-    // 1. Update local cache immediately
-    updateCertificateRecord(id, fields);
+    const current = await fetchAllCertificates();
+    const updated = current.map((c) => (c.id === id ? { ...c, ...fields } : c));
+    localStorage.setItem("trustanchor_issued_certificates", JSON.stringify(updated));
 
-    // 2. Push update to Cloud DB
     const res = await fetch("/api/certificates", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, ...fields }),
     });
     return res.ok;
-  } catch (err) {
-    console.error("Update failed:", err);
+  } catch {
     return true;
   }
 }
 
 export async function deleteCertificateFromDb(id) {
   try {
-    deleteCertificateRecord(id);
+    const current = await fetchAllCertificates();
+    const updated = current.filter((c) => c.id !== id);
+    localStorage.setItem("trustanchor_issued_certificates", JSON.stringify(updated));
+
     await fetch(`/api/certificates?id=${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
@@ -88,41 +98,11 @@ export async function createSelectiveShareTokenDb({ certId, selectedFields, dura
 
 export async function verifyShareTokenDb(tokenId) {
   try {
-    const res = await fetch(`/api/share?token=${encodeURIComponent(tokenId)}`);
+    const res = await fetch(`/api/share?token=${encodeURIComponent(tokenId)}&t=${Date.now()}`, {
+      cache: "no-store",
+    });
     return await res.json();
   } catch (err) {
     return { valid: false, error: err.message };
   }
-}
-
-// Synchronous local state helpers
-export function getAllCertificates() {
-  if (typeof window === "undefined") return [];
-  const raw = localStorage.getItem("trustanchor_issued_certificates");
-  try {
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-export function saveCertificate(cert) {
-  const list = getAllCertificates();
-  const updated = [cert, ...list.filter((c) => c.id !== cert.id)];
-  localStorage.setItem("trustanchor_issued_certificates", JSON.stringify(updated));
-  return updated;
-}
-
-export function updateCertificateRecord(id, fields) {
-  const list = getAllCertificates();
-  const updated = list.map((c) => (c.id === id ? { ...c, ...fields } : c));
-  localStorage.setItem("trustanchor_issued_certificates", JSON.stringify(updated));
-  return updated;
-}
-
-export function deleteCertificateRecord(id) {
-  const list = getAllCertificates();
-  const updated = list.filter((c) => c.id !== id);
-  localStorage.setItem("trustanchor_issued_certificates", JSON.stringify(updated));
-  return updated;
 }
