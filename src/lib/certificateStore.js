@@ -3,7 +3,7 @@ export async function fetchAllCertificates() {
     const res = await fetch(`/api/certificates?t=${Date.now()}`, {
       cache: "no-store",
       headers: {
-        "Pragma": "no-cache",
+        Pragma: "no-cache",
         "Cache-Control": "no-cache",
       },
     });
@@ -16,7 +16,7 @@ export async function fetchAllCertificates() {
       }
     }
   } catch (e) {
-    console.warn("API live fetch error:", e);
+    console.warn("Live fetch failed, checking local backup:", e);
   }
 
   const local = localStorage.getItem("trustanchor_issued_certificates");

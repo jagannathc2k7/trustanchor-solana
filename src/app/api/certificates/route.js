@@ -6,69 +6,34 @@ const CERTS_FILENAME = "trustanchor_certificates_db.json";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export const INITIAL_SEED_CERTIFICATES = [
-  {
-    id: "cred_vit_cs_8841",
-    hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    status: "VALID",
-    docType: "OFFICIAL ACADEMIC TRANSCRIPT",
-    institution: "VIT Chennai",
-    studentName: "Alex Morgan",
-    studentId: "CS-2026-8841",
-    studentEmail: "alex.morgan@student.edu",
-    degree: "Bachelor of Technology in Computer Science",
-    cgpa: "3.92",
-    issuerAuthority: "issuer@vit.ac.in",
-    timestamp: 1774000000,
-  },
-  {
-    id: "cred_vit_ece_1091",
-    hash: "3b545265d6afc3a6f79c0263d31bdd71377497d2ded4548daac4b5c288142be6",
-    status: "VALID",
-    docType: "DEGREE CERTIFICATE",
-    institution: "VIT Chennai",
-    studentName: "Kishore S",
-    studentId: "25BEL1091",
-    studentEmail: "kishore.s2026@student.edu",
-    degree: "Bachelor of Technology in Electrical and Computer Science",
-    cgpa: "8.98",
-    issuerAuthority: "issuer@vit.ac.in",
-    timestamp: 1774050000,
-  },
-];
+async function getLatestCertBlob() {
+  try {
+    const { blobs } = await list();
+    const certBlobs = blobs
+      .filter((b) => b.pathname === CERTS_FILENAME)
+      .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+    return certBlobs[0] || null;
+  } catch {
+    return null;
+  }
+}
 
 async function getCertificatesData() {
   try {
-    const { blobs } = await list();
-    const certBlob = blobs
-      .filter((b) => b.pathname === CERTS_FILENAME)
-      .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))[0];
+    const latestBlob = await getLatestCertBlob();
+    if (!latestBlob) return [];
 
-    if (!certBlob) {
-      // Seed default certificates on first setup
-      try {
-        await put(CERTS_FILENAME, JSON.stringify(INITIAL_SEED_CERTIFICATES), {
-          access: "public",
-          addRandomSuffix: false,
-          allowOverwrite: true,
-        });
-      } catch (e) {
-        console.warn("Could not auto-seed blob:", e.message);
-      }
-      return INITIAL_SEED_CERTIFICATES;
-    }
-
-    const res = await fetch(`${certBlob.url}?t=${Date.now()}`, {
+    const res = await fetch(`${latestBlob.url}?t=${Date.now()}`, {
       cache: "no-store",
-      headers: { "Cache-Control": "no-cache" },
+      headers: { "Cache-Control": "no-cache, no-store" },
     });
 
-    if (!res.ok) return INITIAL_SEED_CERTIFICATES;
+    if (!res.ok) return [];
     const data = await res.json();
-    return Array.isArray(data) && data.length > 0 ? data : INITIAL_SEED_CERTIFICATES;
+    return Array.isArray(data) ? data : [];
   } catch (err) {
-    console.warn("Blob read error, using fallback seed:", err.message);
-    return INITIAL_SEED_CERTIFICATES;
+    console.error("Blob read error:", err);
+    return [];
   }
 }
 
