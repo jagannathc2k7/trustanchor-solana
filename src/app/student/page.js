@@ -2,8 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import jsPDF from "jspdf";
-import "jspdf-autotable";
+import { jsPDF } from "jspdf";
 import { useAuth } from "../../context/AuthContext";
 import { fetchAllCertificates, createSelectiveShareTokenDb } from "../../lib/certificateStore";
 
@@ -12,6 +11,7 @@ export default function StudentVault() {
   const [certs, setCerts] = useState([]);
   const [selectedCert, setSelectedCert] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
 
   // Selective Disclosure Modal State
   const [shareModalOpen, setShareModalOpen] = useState(false);
@@ -86,121 +86,136 @@ export default function StudentVault() {
     setTimeout(() => setCopySuccess(false), 2500);
   };
 
-  // PDF Generator Function
+  // Pure Native jsPDF Generator (Zero Dependency on autoTable)
   const handleDownloadPDF = () => {
     if (!selectedCert) return;
+    setPdfGenerating(true);
 
-    const doc = new jsPDF({
-      orientation: "portrait",
-      unit: "mm",
-      format: "a4",
-    });
+    try {
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
 
-    const isRevoked = selectedCert.status === "REVOKED";
+      const isRevoked = selectedCert.status === "REVOKED";
 
-    // Certificate Background Border
-    doc.setDrawColor(79, 70, 229);
-    doc.setLineWidth(1.5);
-    doc.rect(10, 10, 190, 277);
+      // 1. Elegant Borders
+      doc.setDrawColor(124, 58, 237); // Purple primary
+      doc.setLineWidth(1.2);
+      doc.rect(10, 10, 190, 277);
 
-    doc.setDrawColor(226, 232, 240);
-    doc.setLineWidth(0.5);
-    doc.rect(13, 13, 184, 271);
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.4);
+      doc.rect(13, 13, 184, 271);
 
-    // Watermark if Revoked
-    if (isRevoked) {
-      doc.setTextColor(239, 68, 68);
-      doc.setFontSize(45);
+      // 2. Revocation Stamp if Revoked
+      if (isRevoked) {
+        doc.setTextColor(239, 68, 68);
+        doc.setFontSize(38);
+        doc.setFont("helvetica", "bold");
+        doc.text("REVOKED / INVALID", 32, 150, { angle: 45 });
+      }
+
+      // 3. Institution Header
+      doc.setTextColor(15, 23, 42);
+      doc.setFontSize(20);
       doc.setFont("helvetica", "bold");
-      doc.text("REVOKED / INVALID", 35, 150, { angle: 45 });
+      doc.text((selectedCert.institution || "TRUSTANCHOR ACADEMY").toUpperCase(), 105, 30, { align: "center" });
+
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100, 116, 139);
+      doc.text("OFFICIAL VERIFIED ACADEMIC CREDENTIAL", 105, 36, { align: "center" });
+
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.5);
+      doc.line(25, 42, 185, 42);
+
+      // 4. Document Type
+      doc.setTextColor(30, 41, 59);
+      doc.setFontSize(15);
+      doc.setFont("helvetica", "bold");
+      doc.text(selectedCert.docType || "DEGREE CERTIFICATE", 105, 54, { align: "center" });
+
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(71, 85, 105);
+      doc.text("This official credential certifies that the following academic record has been registered:", 105, 64, { align: "center" });
+
+      // 5. Clean Data Grid (Native Canvas Rows)
+      const rows = [
+        { label: "Student Full Name", value: selectedCert.studentName || "N/A" },
+        { label: "Registration / Roll ID", value: selectedCert.studentId || "N/A" },
+        { label: "Student Email", value: selectedCert.studentEmail || "N/A" },
+        { label: "Degree / Program", value: selectedCert.degree || selectedCert.docType || "N/A" },
+        { label: "Cumulative CGPA", value: `${selectedCert.cgpa || "N/A"} / 10.0` },
+        { label: "Credential Status", value: selectedCert.status || "VALID" },
+        { label: "Issuance Date", value: new Date((selectedCert.timestamp || Date.now() / 1000) * 1000).toLocaleDateString() },
+        { label: "Credential ID", value: selectedCert.id || "N/A" },
+      ];
+
+      let startY = 75;
+      rows.forEach((row, i) => {
+        // Alternate background
+        if (i % 2 === 0) {
+          doc.setFillColor(248, 250, 252);
+          doc.rect(25, startY - 4, 160, 9.5, "F");
+        }
+        doc.setDrawColor(241, 245, 249);
+        doc.rect(25, startY - 4, 160, 9.5, "S");
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(71, 85, 105);
+        doc.text(row.label, 28, startY + 2.5);
+
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(15, 23, 42);
+        doc.text(String(row.value), 90, startY + 2.5);
+
+        startY += 9.5;
+      });
+
+      // 6. SHA-256 State Hash Verification Box
+      startY += 10;
+      doc.setFillColor(245, 243, 255);
+      doc.rect(25, startY, 160, 22, "F");
+      doc.setDrawColor(196, 181, 253);
+      doc.rect(25, startY, 160, 22, "S");
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.setTextColor(109, 40, 217);
+      doc.text("CRYPTOGRAPHIC SHA-256 STATE HASH", 30, startY + 6);
+
+      doc.setFont("courier", "normal");
+      doc.setFontSize(7);
+      doc.setTextColor(51, 65, 85);
+      const splitHash = doc.splitTextToSize(selectedCert.hash || "0x000000000000000000", 150);
+      doc.text(splitHash, 30, startY + 12);
+
+      // 7. Signature Footers
+      const sigY = startY + 44;
+      doc.setDrawColor(148, 163, 184);
+      doc.setLineWidth(0.4);
+      doc.line(30, sigY, 80, sigY);
+      doc.line(130, sigY, 180, sigY);
+
+      doc.setFontSize(8.5);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(30, 41, 59);
+      doc.text("Dean of Academic Affairs", 55, sigY + 5, { align: "center" });
+      doc.text("University Registrar", 155, sigY + 5, { align: "center" });
+
+      const fileName = `${(selectedCert.studentName || "credential").replace(/\s+/g, "_")}_Record.pdf`;
+      doc.save(fileName);
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+      alert("Failed to generate PDF: " + err.message);
+    } finally {
+      setPdfGenerating(false);
     }
-
-    // Header / Institution Title
-    doc.setTextColor(15, 23, 42);
-    doc.setFontSize(22);
-    doc.setFont("helvetica", "bold");
-    doc.text(selectedCert.institution.toUpperCase(), 105, 32, { align: "center" });
-
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(100, 116, 139);
-    doc.text("OFFICIAL VERIFIED ACADEMIC CREDENTIAL", 105, 38, { align: "center" });
-
-    // Divider
-    doc.setDrawColor(203, 213, 225);
-    doc.setLineWidth(0.5);
-    doc.line(25, 44, 185, 44);
-
-    // Document Title
-    doc.setTextColor(30, 41, 59);
-    doc.setFontSize(16);
-    doc.setFont("helvetica", "bold");
-    doc.text(selectedCert.docType, 105, 56, { align: "center" });
-
-    // Body Text
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(71, 85, 105);
-    doc.text("This document certifies that the following academic record has been registered:", 105, 68, { align: "center" });
-
-    // Details Table
-    doc.autoTable({
-      startY: 78,
-      margin: { left: 25, right: 25 },
-      theme: "grid",
-      headStyles: {
-        fillColor: [79, 70, 229],
-        textColor: [255, 255, 255],
-        fontStyle: "bold",
-      },
-      styles: {
-        fontSize: 10,
-        cellPadding: 4,
-      },
-      body: [
-        ["Student Full Name", selectedCert.studentName],
-        ["Registration / Roll ID", selectedCert.studentId],
-        ["Student Email", selectedCert.studentEmail],
-        ["Degree / Major", selectedCert.degree || selectedCert.docType],
-        ["Cumulative CGPA", `${selectedCert.cgpa} / 10.0`],
-        ["Issuance Status", selectedCert.status],
-        ["Date Issued", new Date(selectedCert.timestamp * 1000).toLocaleDateString()],
-        ["Credential ID", selectedCert.id],
-      ],
-    });
-
-    const finalY = doc.lastAutoTable.finalY + 15;
-
-    // State Hash & Security Box
-    doc.setFillColor(248, 250, 252);
-    doc.rect(25, finalY, 160, 24, "F");
-    doc.setDrawColor(226, 232, 240);
-    doc.rect(25, finalY, 160, 24, "S");
-
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(79, 70, 229);
-    doc.text("CRYPTOGRAPHIC SHA-256 STATE HASH", 30, finalY + 7);
-
-    doc.setFont("courier", "normal");
-    doc.setFontSize(7.5);
-    doc.setTextColor(51, 65, 85);
-    doc.text(selectedCert.hash, 30, finalY + 16);
-
-    // Signatures
-    const sigY = finalY + 45;
-    doc.setDrawColor(148, 163, 184);
-    doc.setLineWidth(0.5);
-    doc.line(30, sigY, 80, sigY);
-    doc.line(130, sigY, 180, sigY);
-
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(30, 41, 59);
-    doc.text("Authorized Signatory", 55, sigY + 5, { align: "center" });
-    doc.text("University Registrar", 155, sigY + 5, { align: "center" });
-
-    doc.save(`${selectedCert.studentName.replace(/\s+/g, "_")}_${selectedCert.docType.replace(/\s+/g, "_")}.pdf`);
   };
 
   if (authLoading || loading) {
@@ -342,14 +357,15 @@ export default function StudentVault() {
                 </span>
               </div>
 
-              {/* Action Buttons: PDF Download & Selective Share */}
+              {/* Action Buttons */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 <button
                   type="button"
                   onClick={handleDownloadPDF}
+                  disabled={pdfGenerating}
                   className="py-3 px-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-2"
                 >
-                  📄 Download Official PDF
+                  {pdfGenerating ? "Generating..." : "📄 Download Official PDF"}
                 </button>
                 <button
                   type="button"
