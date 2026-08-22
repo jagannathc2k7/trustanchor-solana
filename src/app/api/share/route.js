@@ -34,7 +34,7 @@ export async function POST(req) {
   try {
     const body = await req.json();
     const current = await getTokensData();
-    const updated = [body, ...current];
+    const updated = [body, ...current.filter((t) => t.tokenId !== body.tokenId)];
     await put(TOKENS_FILENAME, JSON.stringify(updated), {
       access: "public",
       addRandomSuffix: false,
@@ -48,8 +48,14 @@ export async function POST(req) {
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
-    const rawQuery = searchParams.get("token") || searchParams.get("query") || "";
-    const cleanQuery = rawQuery.trim();
+    let rawQuery = searchParams.get("token") || searchParams.get("query") || "";
+    
+    // Extract token if a full URL was pasted
+    if (rawQuery.includes("token=")) {
+      rawQuery = rawQuery.split("token=")[1].split("&")[0];
+    }
+    
+    const cleanQuery = decodeURIComponent(rawQuery.trim());
 
     if (!cleanQuery) {
       return NextResponse.json({ valid: false, error: "Empty query provided." }, { status: 400 });
@@ -58,7 +64,7 @@ export async function GET(req) {
     const allCerts = await getCertificatesData();
     const allTokens = await getTokensData();
 
-    // 1. Check if input is a Selective Share Token
+    // 1. Check if query is a Selective Share Token
     const tokenRecord = allTokens.find((t) => t.tokenId === cleanQuery);
     if (tokenRecord) {
       const now = Math.floor(Date.now() / 1000);

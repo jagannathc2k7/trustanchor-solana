@@ -1,208 +1,214 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
+import Link from "next/link";
 import { useAuth } from "../../context/AuthContext";
-import { verifyShareToken, findCertificateByIdOrHash } from "../../lib/certificateStore";
+import { verifyShareTokenDb } from "../../lib/certificateStore";
 
-export default function CompanyPortal() {
-  const { user } = useAuth();
+export default function CompanyEngine() {
+  const { user, loading: authLoading } = useAuth();
   const [tokenInput, setTokenInput] = useState("");
-  const [verificationResult, setVerificationResult] = useState(null);
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-  const [showPayloadModal, setShowPayloadModal] = useState(false);
+  const [verificationHistory, setVerificationHistory] = useState([]);
 
-  const handleVerify = (e) => {
+  const handleVerify = async (e) => {
     e.preventDefault();
+    if (!tokenInput.trim()) return;
+
+    setLoading(true);
     setErrorMsg("");
-    setVerificationResult(null);
+    setResult(null);
 
-    let cleanToken = tokenInput.trim();
-    if (cleanToken.includes("token=")) {
-      cleanToken = cleanToken.split("token=")[1].split("&")[0];
+    let clean = tokenInput.trim();
+    if (clean.includes("token=")) {
+      clean = clean.split("token=")[1].split("&")[0];
     }
 
-    // Try selective token first
-    const tokenCheck = verifyShareToken(cleanToken);
-    if (tokenCheck.valid) {
-      setVerificationResult(tokenCheck);
-      return;
+    try {
+      const res = await verifyShareTokenDb(clean);
+      if (res && res.cert) {
+        setResult(res);
+        setVerificationHistory((prev) => [
+          {
+            id: res.cert.id,
+            name: res.disclosedFields?.studentName !== false ? res.cert.studentName : "Undisclosed Candidate",
+            institution: res.cert.institution,
+            docType: res.cert.docType,
+            status: res.isRevoked ? "REVOKED" : "VERIFIED",
+            time: new Date().toLocaleTimeString(),
+          },
+          ...prev.filter((p) => p.id !== res.cert.id),
+        ]);
+      } else {
+        setErrorMsg(res?.error || "Unable to resolve credential proof. Link may be invalid or expired.");
+      }
+    } catch {
+      setErrorMsg("Verification network request failed.");
+    } finally {
+      setLoading(false);
     }
-
-    // Fallback: Check Base58 ID directly
-    const directCert = findCertificateByIdOrHash(cleanToken);
-    if (directCert) {
-      setVerificationResult({
-        valid: directCert.status !== "REVOKED",
-        isRevoked: directCert.status === "REVOKED",
-        cert: directCert,
-        disclosedFields: { studentName: true, degree: true, branch: true, cgpa: true, rollNumber: true },
-      });
-      return;
-    }
-
-    setErrorMsg(tokenCheck.error || "No valid academic credential or share token found.");
   };
 
+  if (authLoading) return null;
+
   return (
-    <div className="min-h-screen bg-[#050811] text-white flex flex-col items-center pt-8 px-4 pb-20">
-      <div className="w-full max-w-3xl">
-        <div className="bg-[#0c1322] border border-slate-800 p-6 rounded-2xl mb-8 flex justify-between items-center">
-          <div>
-            <span className="text-[11px] text-purple-400 font-mono uppercase tracking-wider">RECRUITER / VERIFIER PORTAL</span>
-            <h1 className="text-xl font-bold mt-1">Company Credential Verification Engine</h1>
-            <p className="text-xs text-slate-400">Authenticated verification for HRs and background checkers.</p>
-          </div>
-          <span className="bg-purple-950/80 border border-purple-800 text-purple-300 text-xs px-3 py-1 rounded-full font-bold">
-            {user?.company || "XYZ Technologies"}
+    <div className="min-h-screen py-10 px-4 max-w-5xl mx-auto space-y-8">
+      {/* Top Banner */}
+      <div className="p-6 bg-[#0c1322] border border-white/[0.06] rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <span className="text-[10px] font-mono text-blue-400 uppercase tracking-widest font-bold block mb-1">
+            Enterprise Recruiter Portal
           </span>
+          <h1 className="text-2xl font-black text-white">Company Verification Engine</h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Logged in as: <span className="text-blue-400 font-semibold">{user?.name || "Corporate Verifier"}</span> ({user?.company || "TechCorp Global"})
+          </p>
         </div>
+        <span className="px-3.5 py-1.5 bg-blue-950/80 border border-blue-700 text-blue-300 font-bold text-xs rounded-xl">
+          Recruiter Tier Active
+        </span>
+      </div>
 
-        {/* Search / Token input */}
-        <form onSubmit={handleVerify} className="bg-[#0c1322] border border-slate-800 p-6 rounded-2xl mb-8 space-y-4">
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Paste Share Token or Verification URL
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="http://localhost:3000/verify?token=share_... or Base58 ID"
-              value={tokenInput}
-              onChange={(e) => setTokenInput(e.target.value)}
-              className="flex-1 bg-[#050811] border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-purple-500"
-            />
-            <button
-              type="submit"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-xl text-xs transition"
-            >
-              Verify Now
-            </button>
-          </div>
+      {/* Search Bar */}
+      <div className="bg-[#0c1322] border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-4">
+        <h2 className="text-sm font-bold text-white uppercase tracking-wider">Candidate Credential Verification</h2>
+        <p className="text-xs text-slate-400">
+          Paste the candidate's Selective Share Link, Credential ID, or State Hash to inspect verified claims.
+        </p>
 
-          <div className="text-[11px] text-slate-500 space-y-1 pt-2">
-            <p>✔ Ed25519 & SHA-256 Cryptographic Signature Checks</p>
-            <p>✔ Solana Program State Anchor & Revocation Lookup</p>
-            <p>✔ Selective Disclosure Consent & Expiration Verification</p>
-          </div>
+        <form onSubmit={handleVerify} className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="text"
+            placeholder="Paste candidate share link (e.g., https://.../?token=share_xxx) or Credential ID..."
+            value={tokenInput}
+            onChange={(e) => setTokenInput(e.target.value)}
+            className="flex-1 bg-[#050811] border border-slate-800 rounded-xl px-4 py-3 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500 font-mono"
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition cursor-pointer disabled:opacity-50 shrink-0"
+          >
+            {loading ? "Inspecting..." : "Verify Candidate"}
+          </button>
         </form>
 
         {errorMsg && (
-          <div className="p-4 bg-red-950/40 border border-red-800 rounded-xl text-red-300 text-xs mb-6">
-            {errorMsg}
-          </div>
-        )}
-
-        {/* Verification Result Card */}
-        {verificationResult && (
-          <div className={`bg-[#0c1322] border rounded-2xl p-6 shadow-2xl space-y-6 ${
-            verificationResult.isRevoked ? "border-red-700 bg-red-950/10" : "border-slate-800"
-          }`}>
-            <div className="flex justify-between items-center border-b border-slate-800 pb-4">
-              <div>
-                <span className="text-xs font-mono uppercase text-purple-400">{verificationResult.cert.docType}</span>
-                <h2 className="text-lg font-bold text-white">{verificationResult.cert.degree || verificationResult.cert.docType}</h2>
-                <p className="text-xs text-slate-400">{verificationResult.cert.institution} • {verificationResult.cert.id.slice(0, 12)}</p>
-              </div>
-              <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                verificationResult.isRevoked
-                  ? "bg-red-950 border border-red-800 text-red-300"
-                  : "bg-emerald-950 border border-emerald-800 text-emerald-300"
-              }`}>
-                {verificationResult.isRevoked ? "ACCESS REVOKED" : "• Verified"}
-              </span>
-            </div>
-
-            {/* Checklist */}
-            <div className="space-y-2 text-xs text-slate-300">
-              <div className="flex items-center gap-2">
-                <span className={verificationResult.isRevoked ? "text-red-400" : "text-emerald-400"}>✔</span>
-                <span>Authentic Credential & Signature Valid</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={verificationResult.isRevoked ? "text-red-400" : "text-emerald-400"}>✔</span>
-                <span>Solana Anchor Ledger Record Verified</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={verificationResult.isRevoked ? "text-red-400" : "text-emerald-400"}>
-                  {verificationResult.isRevoked ? "✖" : "✔"}
-                </span>
-                <span>Status: {verificationResult.isRevoked ? "REVOKED ON-CHAIN" : "Active & Unmodified"}</span>
-              </div>
-            </div>
-
-            {/* Disclosed Claims Box */}
-            <div className="p-4 bg-[#050811] border border-slate-800 rounded-xl space-y-3">
-              <div className="flex justify-between items-center border-b border-slate-800/80 pb-2">
-                <span className="text-xs font-bold text-slate-200">Authorized Student Disclosed Claims</span>
-                <span className="text-[10px] text-emerald-400 uppercase font-bold">Selective Disclosure Active</span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 text-xs">
-                <div>
-                  <p className="text-slate-500">Student Name</p>
-                  <p className="font-semibold text-white">
-                    {verificationResult.disclosedFields?.studentName ? verificationResult.cert.studentName : "[HIDDEN BY STUDENT]"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-slate-500">Roll Number / Student ID</p>
-                  <p className="font-semibold text-white">
-                    {verificationResult.disclosedFields?.rollNumber ? verificationResult.cert.studentId : "[NOT REQUESTED]"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-slate-500">Degree / Major</p>
-                  <p className="font-semibold text-white">
-                    {verificationResult.disclosedFields?.degree ? verificationResult.cert.degree : "[HIDDEN]"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-slate-500">Cumulative CGPA</p>
-                  <p className="font-semibold text-emerald-400">
-                    {verificationResult.disclosedFields?.cgpa ? `${verificationResult.cert.cgpa} / 10.0` : "[NOT DISCLOSED]"}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-between items-center pt-2">
-              <button
-                onClick={() => setShowPayloadModal(true)}
-                className="text-xs text-purple-400 hover:text-purple-300 underline font-semibold"
-              >
-                View Solana Ledger Payload
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* PAYLOAD MODAL */}
-        {showPayloadModal && verificationResult && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-[#0c1322] border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
-              <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                <h3 className="text-sm font-bold text-white">On-Chain Payload Inspection</h3>
-                <button onClick={() => setShowPayloadModal(false)} className="text-slate-400 hover:text-white">✕</button>
-              </div>
-              <pre className="bg-[#050811] p-4 rounded-xl text-[11px] text-emerald-400 font-mono overflow-auto max-h-60 border border-slate-800">
-                {JSON.stringify({
-                  network: "Solana Devnet",
-                  credentialId: verificationResult.cert.id,
-                  stateHash: verificationResult.cert.hash,
-                  issuerAuthority: verificationResult.cert.issuerAuthority,
-                  status: verificationResult.cert.status || "VALID",
-                  disclosedClaims: verificationResult.disclosedFields,
-                }, null, 2)}
-              </pre>
-              <button
-                onClick={() => setShowPayloadModal(false)}
-                className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold"
-              >
-                Close
-              </button>
-            </div>
+          <div className="p-3.5 bg-red-950/60 border border-red-800 rounded-xl text-red-300 text-xs">
+            ✕ {errorMsg}
           </div>
         )}
       </div>
+
+      {/* Candidate Claims Result */}
+      {result && result.cert && (
+        <div
+          className={`p-6 rounded-2xl border text-left space-y-4 backdrop-blur-xl shadow-2xl transition-all ${
+            result.isRevoked
+              ? "bg-red-950/20 border-red-800/80"
+              : "bg-[#0c1322] border-blue-500/40"
+          }`}
+        >
+          <div className="flex justify-between items-start border-b border-white/[0.06] pb-4">
+            <div>
+              <span className="text-[10px] font-bold font-mono text-blue-400 uppercase tracking-wider block">
+                {result.cert.docType}
+              </span>
+              <h3 className="text-xl font-bold text-white mt-1">
+                {result.disclosedFields?.degree !== false ? (result.cert.degree || result.cert.docType) : "[DEGREE CLAIM WITHHELD]"}
+              </h3>
+              <p className="text-xs text-blue-300 font-medium mt-0.5">{result.cert.institution}</p>
+            </div>
+
+            <span
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold tracking-wider ${
+                result.isRevoked
+                  ? "bg-red-950 border border-red-700 text-red-300"
+                  : "bg-emerald-950 border border-emerald-700 text-emerald-300"
+              }`}
+            >
+              {result.isRevoked ? "● REVOKED CLAIM" : "✓ VERIFIED CANDIDATE"}
+            </span>
+          </div>
+
+          {result.isRevoked && (
+            <div className="p-3 bg-red-950/80 border border-red-800 rounded-xl text-xs text-red-200">
+              <span className="font-bold">Institution Revocation Notice:</span> {result.cert.revocationReason || "Credential invalidated by the issuing authority."}
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="bg-[#050811] p-3.5 rounded-xl border border-slate-800">
+              <span className="text-slate-500 text-[10px] uppercase font-bold block">Candidate Name</span>
+              <span className="font-semibold text-white mt-1 block">
+                {result.disclosedFields?.studentName !== false ? result.cert.studentName : "[WITHHELD BY CANDIDATE]"}
+              </span>
+            </div>
+
+            <div className="bg-[#050811] p-3.5 rounded-xl border border-slate-800">
+              <span className="text-slate-500 text-[10px] uppercase font-bold block">Student ID / Roll No</span>
+              <span className="font-semibold text-white mt-1 block font-mono">
+                {result.disclosedFields?.rollNumber !== false ? result.cert.studentId : "[WITHHELD]"}
+              </span>
+            </div>
+
+            <div className="bg-[#050811] p-3.5 rounded-xl border border-slate-800">
+              <span className="text-slate-500 text-[10px] uppercase font-bold block">Verified CGPA</span>
+              <span className="font-bold text-emerald-400 mt-1 block text-sm">
+                {result.disclosedFields?.cgpa !== false ? `${result.cert.cgpa} / 10.0` : "[WITHHELD]"}
+              </span>
+            </div>
+
+            <div className="bg-[#050811] p-3.5 rounded-xl border border-slate-800">
+              <span className="text-slate-500 text-[10px] uppercase font-bold block">Issuance Date</span>
+              <span className="font-semibold text-slate-300 mt-1 block">
+                {new Date((result.cert.timestamp || Date.now() / 1000) * 1000).toLocaleDateString()}
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-[#050811] p-3.5 rounded-xl border border-slate-800 flex items-center justify-between">
+            <div className="min-w-0 pr-4">
+              <span className="text-slate-500 text-[10px] uppercase font-bold block">SHA-256 State Fingerprint</span>
+              <span className="font-mono text-[10px] text-blue-300 truncate block mt-0.5">
+                {result.cert.hash}
+              </span>
+            </div>
+            <span className="text-[10px] font-mono text-emerald-400 uppercase font-bold shrink-0">
+              Cloud Verified
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Recruiter Audit Log */}
+      {verificationHistory.length > 0 && (
+        <div className="bg-[#0c1322] border border-slate-800 rounded-2xl p-6 shadow-2xl">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">
+            Recent Candidate Verification Sessions
+          </h3>
+          <div className="divide-y divide-slate-800/60 text-xs">
+            {verificationHistory.map((item, idx) => (
+              <div key={idx} className="py-3 flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-white block">{item.name}</span>
+                  <span className="text-slate-400 text-[11px]">{item.institution} — {item.docType}</span>
+                </div>
+                <div className="text-right">
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    item.status === "VERIFIED" ? "bg-emerald-950 text-emerald-300" : "bg-red-950 text-red-300"
+                  }`}>
+                    {item.status}
+                  </span>
+                  <span className="block text-[10px] text-slate-500 font-mono mt-0.5">{item.time}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
